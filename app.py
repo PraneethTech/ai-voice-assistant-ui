@@ -1,0 +1,487 @@
+"""SPAN — browser replica of the 240x320 device screen.
+
+One background monitor thread reads hardware state (Wi-Fi, internet, mic mute,
+battery) and pushes changes to browsers over Server-Sent Events. The voice
+pipeline (wake word, VAD, STT, SLM, TTS) reports progress with POST /api/event
+or, in-process, with publish(event).
+"""
+from collections import deque
+from flask import Flask, render_template, jsonify, request, Response, stream_with_context
+import glob
+import json
+import os
+import queue
+import random
+import shutil
+import socket
+import subprocess
+import threading
+import time
+
+app = Flask(__name__)
+LOCK = threading.RLock()
+
+# Latching switch on GPIO 5 (stays down until pressed again). Its position
+# decides mic mute; set to False if your wiring is the other way round.
+SWITCH_PRESSED_MUTES = True
+MIC = "@DEFAULT_AUDIO_SOURCE@"
+
+# Single WS2812 pixel. Priority is top to bottom in choose_led().
+LED_COLORS = {
+    "red": (255, 0, 0),        # mic muted
+    "amber": (255, 140, 0),    # thinking
+    "purple": (150, 0, 255),   # using a tool
+    "green": (0, 255, 60),     # responding, or idle with internet
+    "cyan": (0, 200, 255),     # listening / recording
+    "blue": (0, 60, 255),      # idle without internet
+}
+MODES = ("idle", "listening", "recording", "thinking", "tool", "speaking")
+
+STATE = {
+    "wifi": False,
+    "internet": False,
+    "mic_muted": False,
+    "battery": {"percent": None, "charging": None},
+    "mode": "idle",
+    "recording_started_at": None,
+    "led": {"name": "blue", "hex": "#003cff"},
+    "hardware": {"gpio_button": False, "ws2812": False,
+                 "audio_control": bool(shutil.which("wpctl")), "battery": False, "errors": []},
+}
+button = None
+pixels = None
+_last_rgb = None
+
+
+def add_error(msg):
+    with LOCK:
+        STATE["hardware"]["errors"] = (STATE["hardware"]["errors"] + [msg])[-5:]
+
+
+# ---------- SSE fan-out ----------
+
+CLIENTS = []
+CLIENTS_LOCK = threading.Lock()
+# Recent chat events, replayed to a browser that connects or reloads mid-conversation.
+HISTORY = deque(maxlen=600)
+
+
+def _state_copy():
+    with LOCK:
+        return json.loads(json.dumps(STATE))
+
+
+def broadcast(event):
+    data = "data: " + json.dumps(event, ensure_ascii=False) + "\n\n"
+    with CLIENTS_LOCK:
+        if event.get("type") != "state":
+            HISTORY.append(data)
+        clients = list(CLIENTS)
+    for q in clients:
+        try:
+            q.put_nowait(data)
+        except queue.Full:
+            # Slow client: drop its backlog and resync it with the full state.
+            with q.mutex:
+                q.queue.clear()
+            q.put_nowait("data: " + json.dumps({"type": "state", "state": _state_copy()}) + "\n\n")
+
+
+def push_state():
+    broadcast({"type": "state", "state": _state_copy()})
+
+
+# ---------- hardware ----------
+
+def run_cmd(args, timeout=2):
+    return subprocess.run(args, capture_output=True, text=True, timeout=timeout, check=True)
+
+
+def read_mic_muted():
+    if not shutil.which("wpctl"):
+        return None
+    try:
+        return "[MUTED]" in run_cmd(["wpctl", "get-volume", MIC]).stdout
+    except Exception:
+        return None
+
+
+def set_mic_muted(mute):
+    if not shutil.which("wpctl"):
+        raise RuntimeError("wpctl is not installed or not on PATH")
+    run_cmd(["wpctl", "set-mute", MIC, "1" if mute else "0"])
+
+
+def read_wifi():
+    if not shutil.which("nmcli"):
+        return False
+    try:
+        out = run_cmd(["nmcli", "-t", "-f", "TYPE,STATE", "device", "status"]).stdout
+    except Exception:
+        return False
+    return any(line == "wifi:connected" for line in out.splitlines())
+
+
+def read_internet():
+    try:
+        socket.create_connection(("1.1.1.1", 53), timeout=1).close()
+        return True
+    except OSError:
+        return False
+
+
+def read_battery():
+    """UPS HATs that expose a kernel power_supply driver show up here. A bare Pi 5 has none."""
+    for path in glob.glob("/sys/class/power_supply/*"):
+        try:
+            with open(os.path.join(path, "type")) as f:
+                if f.read().strip() != "Battery":
+                    continue
+            with open(os.path.join(path, "capacity")) as f:
+                percent = max(0, min(100, int(f.read().strip())))
+            charging = None
+            status_file = os.path.join(path, "status")
+            if os.path.exists(status_file):
+                with open(status_file) as f:
+                    charging = f.read().strip() in ("Charging", "Full")
+            return {"percent": percent, "charging": charging}
+        except (OSError, ValueError):
+            continue
+    return {"percent": None, "charging": None}
+
+
+def choose_led(s):
+    if s["mic_muted"]:
+        name = "red"
+    elif s["mode"] == "thinking":
+        name = "amber"
+    elif s["mode"] == "tool":
+        name = "purple"
+    elif s["mode"] == "speaking":
+        name = "green"
+    elif s["mode"] in ("listening", "recording"):
+        name = "cyan"
+    else:
+        name = "green" if s["internet"] else "blue"
+    return name
+
+
+def update_led():
+    """Recompute the LED; write the pixel only when the colour changes."""
+    global _last_rgb
+    with LOCK:
+        name = choose_led(STATE)
+        rgb = LED_COLORS[name]
+        STATE["led"] = {"name": name, "hex": "#%02x%02x%02x" % rgb}
+    if pixels is not None and rgb != _last_rgb:
+        try:
+            pixels[0] = rgb
+            _last_rgb = rgb
+        except Exception as exc:
+            add_error(f"WS2812 write: {exc}")
+
+
+def apply_switch():
+    if button is None:
+        return
+    mute = bool(button.is_pressed) == SWITCH_PRESSED_MUTES
+    try:
+        set_mic_muted(mute)
+    except Exception as exc:
+        add_error(f"Microphone mute: {exc}")
+    with LOCK:
+        STATE["mic_muted"] = mute
+    update_led()
+    push_state()
+
+
+def init_hardware():
+    global button, pixels
+    try:
+        from gpiozero import Button
+        button = Button(5, pull_up=False, bounce_time=0.2)
+        button.when_pressed = apply_switch
+        button.when_released = apply_switch
+        STATE["hardware"]["gpio_button"] = True
+    except Exception as exc:
+        button = None
+        add_error(f"GPIO 5 switch init: {exc}")
+    try:
+        import board
+        import neopixel
+        pixels = neopixel.NeoPixel(board.D13, 1, brightness=0.3, auto_write=True)
+        STATE["hardware"]["ws2812"] = True
+    except Exception as exc:
+        pixels = None
+        add_error(f"WS2812 board.D13 init: {exc}")
+    apply_switch()
+    update_led()
+
+
+def monitor():
+    """Single poller for all slow system state. Pushes only on change."""
+    tick = 0
+    while True:
+        changes = {}
+        if tick % 3 == 0:
+            changes["wifi"] = read_wifi()
+        if tick % 5 == 0:
+            changes["internet"] = read_internet()
+        if tick % 2 == 0:
+            muted = read_mic_muted()
+            if muted is not None:
+                changes["mic_muted"] = muted
+        if tick % 15 == 0:
+            changes["battery"] = read_battery()
+        with LOCK:
+            if "battery" in changes:
+                STATE["hardware"]["battery"] = changes["battery"]["percent"] is not None
+            changed = any(STATE[k] != v for k, v in changes.items())
+            STATE.update(changes)
+        if changed:
+            update_led()
+            push_state()
+        tick += 1
+        time.sleep(1)
+
+
+# ---------- events from the voice pipeline ----------
+
+EVENT_TYPES = {"wake", "user_partial", "user_final", "assistant_start", "assistant_token",
+               "assistant_done", "assistant_interrupted", "tool", "error", "mode", "recording"}
+
+
+def _set_mode(mode):
+    STATE["mode"] = mode
+    if mode == "recording":
+        STATE["recording_started_at"] = STATE["recording_started_at"] or time.time()
+    else:
+        STATE["recording_started_at"] = None
+
+
+def publish(event):
+    """Apply an event to device state and fan it out to every browser."""
+    etype = event.get("type")
+    if etype not in EVENT_TYPES:
+        raise ValueError(f"unknown event type: {etype!r}")
+    with LOCK:
+        before = STATE["mode"]
+        recording = before == "recording"
+        if etype == "mode":
+            if event.get("mode") not in MODES:
+                raise ValueError("mode must be one of " + ", ".join(MODES))
+            _set_mode(event["mode"])
+        elif etype == "recording":
+            _set_mode("recording" if event.get("on") else "idle")
+        elif recording:
+            pass  # transcripts stream into the recording; mode stays until stopped
+        elif etype in ("wake", "user_partial", "assistant_interrupted"):
+            _set_mode("listening")
+        elif etype in ("user_final", "assistant_start"):
+            _set_mode("thinking")
+        elif etype == "tool":
+            _set_mode("tool" if event.get("status") == "start" else "thinking")
+        elif etype == "assistant_token":
+            _set_mode("speaking")
+        elif etype == "assistant_done":
+            nxt = event.get("next_mode", "idle")
+            _set_mode(nxt if nxt in MODES else "idle")
+        mode_changed = STATE["mode"] != before
+    if etype not in ("mode", "recording"):
+        if recording and etype.startswith("user_"):
+            event = dict(event, recording=True)
+        broadcast(event)
+    if mode_changed or etype in ("mode", "recording"):
+        update_led()
+        push_state()
+
+
+# ---------- demo scenarios (UI testing without the pipeline) ----------
+
+DEMO_LOCK = threading.Lock()
+
+
+def _say_user(uid, text, gap=(0.12, 0.25)):
+    words = text.split()
+    for i in range(1, len(words) + 1):
+        publish({"type": "user_partial", "id": uid, "text": " ".join(words[:i])})
+        time.sleep(random.uniform(*gap))
+    publish({"type": "user_final", "id": uid, "text": text})
+
+
+def _answer(aid, text, input_tokens, stop_after=None):
+    start = time.perf_counter()
+    publish({"type": "assistant_start", "id": aid})
+    time.sleep(random.uniform(0.35, 0.7))
+    first = None
+    words = text.split()
+    for i, word in enumerate(words):
+        if stop_after is not None and i >= stop_after:
+            publish({"type": "assistant_interrupted", "id": aid})
+            return
+        if first is None:
+            first = time.perf_counter()
+        publish({"type": "assistant_token", "id": aid, "text": word + (" " if i < len(words) - 1 else "")})
+        time.sleep(random.uniform(0.04, 0.09))
+    end = time.perf_counter()
+    out_tokens = max(1, round(len(words) * 1.3))  # demo estimate; real pipeline reports exact counts
+    gen_ms = (end - first) * 1000
+    publish({"type": "assistant_done", "id": aid, "metrics": {
+        "ttft_ms": round((first - start) * 1000),
+        "total_ms": round((end - start) * 1000),
+        "gen_ms": round(gen_ms),
+        "tpot_ms": round(gen_ms / max(1, out_tokens - 1), 1),
+        "tokens_per_sec": round(out_tokens / max(gen_ms / 1000, 0.001), 1),
+        "input_tokens": input_tokens,
+        "output_tokens": out_tokens,
+    }})
+
+
+def _tool(tid, name, ok=True, detail=""):
+    publish({"type": "tool", "id": tid, "name": name, "status": "start"})
+    time.sleep(random.uniform(0.5, 0.9))
+    publish({"type": "tool", "id": tid, "name": name, "status": "ok" if ok else "error", "detail": detail})
+
+
+def demo_chat():
+    publish({"type": "wake"})
+    time.sleep(0.4)
+    _say_user("u1", "What's the weather in Hyderabad today?")
+    _tool("t1", "get_location", detail="Hyderabad, IN")
+    _tool("t2", "get_weather", detail="31°C, partly cloudy")
+    _answer("a1", "It's 31 degrees and partly cloudy in Hyderabad right now. "
+                  "There's a small chance of light rain after 6 PM, so keep an umbrella handy.", 412)
+
+
+def demo_recording():
+    publish({"type": "recording", "on": True})
+    time.sleep(0.5)
+    _say_user("r1", "Agenda for today. Finish the Pi audio driver, review the wake word dataset, "
+                    "and call the hardware vendor about the speaker grille.", gap=(0.15, 0.3))
+    time.sleep(1.2)
+    publish({"type": "recording", "on": False})
+
+
+def demo_offline():
+    publish({"type": "wake"})
+    time.sleep(0.4)
+    _say_user("u2", "What is the latest news in the USA?")
+    _tool("t3", "web_search", ok=False, detail="No internet connection")
+    _answer("a2", "I can't reach the internet right now, so I can't look up the latest news. "
+                  "Turn Wi-Fi back on and ask me again.", 298)
+
+
+def demo_interrupt():
+    publish({"type": "wake"})
+    time.sleep(0.4)
+    _say_user("u3", "Tell me about the Raspberry Pi 5")
+    _answer("a3", "The Raspberry Pi 5 is a single board computer with a quad core Cortex A76 "
+                  "processor running at 2.4 gigahertz, up to 16 gigabytes of memory, and a new RP1 "
+                  "input output chip that", 280, stop_after=14)
+    _say_user("u4", "Stop. Just tell me the RAM options.")
+    _answer("a4", "It comes with 2, 4, 8 or 16 gigabytes of RAM.", 334)
+
+
+DEMOS = {"chat": demo_chat, "recording": demo_recording, "offline": demo_offline, "interrupt": demo_interrupt}
+
+
+def _run_demo(fn):
+    try:
+        fn()
+    except Exception as exc:
+        broadcast({"type": "error", "message": f"Demo failed: {exc}"})
+        with LOCK:
+            _set_mode("idle")
+        update_led()
+        push_state()
+    finally:
+        DEMO_LOCK.release()
+
+
+# ---------- routes ----------
+
+@app.get("/")
+def index():
+    return render_template("index.html")
+
+
+@app.get("/api/state")
+def get_state():
+    return jsonify(_state_copy())
+
+
+@app.get("/api/events")
+def events():
+    q = queue.Queue(maxsize=256)
+    with CLIENTS_LOCK:
+        backlog = list(HISTORY)
+        CLIENTS.append(q)
+
+    @stream_with_context
+    def gen():
+        try:
+            yield "retry: 2000\n" + "data: " + json.dumps({"type": "state", "state": _state_copy()}) + "\n\n"
+            if backlog:
+                yield "".join(backlog)
+            while True:
+                try:
+                    yield q.get(timeout=15)
+                except queue.Empty:
+                    yield ": ping\n\n"
+        finally:
+            with CLIENTS_LOCK:
+                if q in CLIENTS:
+                    CLIENTS.remove(q)
+
+    return Response(gen(), mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.post("/api/event")
+def post_event():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"ok": False, "error": "JSON object required"}), 400
+    try:
+        publish(data)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True})
+
+
+@app.post("/api/action")
+def action():
+    data = request.get_json(silent=True) or {}
+    if data.get("action") != "mic":
+        return jsonify({"ok": False, "error": "Unknown action"}), 400
+    if button is not None:
+        return jsonify({"ok": False, "error": "Use the mute switch"}), 409
+    with LOCK:
+        new_value = not STATE["mic_muted"]
+    try:
+        set_mic_muted(new_value)
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    with LOCK:
+        STATE["mic_muted"] = new_value
+    update_led()
+    push_state()
+    return jsonify({"ok": True})
+
+
+@app.post("/api/demo")
+def demo():
+    fn = DEMOS.get((request.get_json(silent=True) or {}).get("scenario"))
+    if fn is None:
+        return jsonify({"ok": False, "error": "scenario must be one of " + ", ".join(DEMOS)}), 400
+    if not DEMO_LOCK.acquire(blocking=False):
+        return jsonify({"ok": False, "error": "A demo is already running"}), 409
+    threading.Thread(target=_run_demo, args=(fn,), daemon=True).start()
+    return jsonify({"ok": True})
+
+
+init_hardware()
+threading.Thread(target=monitor, daemon=True).start()
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=False, threaded=True)

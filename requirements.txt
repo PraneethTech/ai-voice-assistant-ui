@@ -1,0 +1,6 @@
+Flask>=3.0,<4.0
+gpiozero>=2.0,<3.0
+Adafruit-Blinka>=9.0
+Adafruit-Blinka-Raspberry-Pi5-Neopixel>=1.0.0rc2
+adafruit-circuitpython-neopixel>=6.4
+rpi-ws281x>=5.0
