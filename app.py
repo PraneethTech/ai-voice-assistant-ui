@@ -9,6 +9,8 @@ from collections import deque
 from flask import Flask, render_template, jsonify, request, Response, stream_with_context
 import glob
 import json
+import logging
+from logging.handlers import RotatingFileHandler
 import os
 import queue
 import random
@@ -21,19 +23,42 @@ import time
 app = Flask(__name__)
 LOCK = threading.RLock()
 
-# Latching switch on GPIO 5 (stays down until pressed again). Its position
-# decides mic mute; set to False if your wiring is the other way round.
-SWITCH_PRESSED_MUTES = True
+
+def configure_logger():
+    """Create a small local log that can be shared for hardware diagnosis."""
+    logger = logging.getLogger("span")
+    logger.setLevel(logging.INFO)
+    if logger.handlers:
+        return logger
+    log_path = os.environ.get("SPAN_LOG_FILE", os.path.join(app.root_path, "logs", "span.log"))
+    try:
+        os.makedirs(os.path.dirname(os.path.abspath(log_path)), exist_ok=True)
+        handler = RotatingFileHandler(log_path, maxBytes=256 * 1024, backupCount=3, encoding="utf-8")
+    except OSError:
+        # The screen must still work if a read-only filesystem prevents logging.
+        handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    logger.addHandler(handler)
+    logger.propagate = False
+    return logger
+
+
+LOG = configure_logger()
+
+# Momentary push button on GPIO 5 toggles microphone mute on each press.
 MIC = "@DEFAULT_AUDIO_SOURCE@"
+# Listening automatically returns to the ready screen after this quiet period.
+# Recording stays active until the pipeline explicitly stops it.
+FOLLOW_UP_TIMEOUT_SECONDS = max(1, int(os.environ.get("FOLLOW_UP_TIMEOUT_SECONDS", "10")))
 
 # Single WS2812 pixel. Priority is top to bottom in choose_led().
 LED_COLORS = {
     "red": (255, 0, 0),        # mic muted
     "amber": (255, 140, 0),    # thinking
     "purple": (150, 0, 255),   # using a tool
-    "green": (0, 255, 60),     # responding, or idle with internet
-    "cyan": (0, 200, 255),     # listening / recording
-    "blue": (0, 60, 255),      # idle without internet
+    "green": (34, 197, 94),    # mic on / responding / ready
+    "cyan": (34, 211, 238),    # listening / recording
+    "blue": (59, 130, 246),    # reserved for offline indication
 }
 MODES = ("idle", "listening", "recording", "thinking", "tool", "speaking")
 
@@ -43,8 +68,9 @@ STATE = {
     "mic_muted": False,
     "battery": {"percent": None, "charging": None},
     "mode": "idle",
+    "last_activity_at": time.monotonic(),
     "recording_started_at": None,
-    "led": {"name": "blue", "hex": "#003cff"},
+    "led": {"name": "green", "hex": "#22c55e"},
     "hardware": {"gpio_button": False, "ws2812": False,
                  "audio_control": bool(shutil.which("wpctl")), "battery": False, "errors": []},
 }
@@ -54,6 +80,7 @@ _last_rgb = None
 
 
 def add_error(msg):
+    LOG.warning("%s", msg)
     with LOCK:
         STATE["hardware"]["errors"] = (STATE["hardware"]["errors"] + [msg])[-5:]
 
@@ -113,13 +140,31 @@ def set_mic_muted(mute):
 
 
 def read_wifi():
-    if not shutil.which("nmcli"):
-        return False
-    try:
-        out = run_cmd(["nmcli", "-t", "-f", "TYPE,STATE", "device", "status"]).stdout
-    except Exception:
-        return False
-    return any(line == "wifi:connected" for line in out.splitlines())
+    # Prefer NetworkManager when present; fall back to kernel interface state
+    # so Raspberry Pi OS installs without NetworkManager still report Wi-Fi.
+    if shutil.which("nmcli"):
+        try:
+            out = run_cmd(["nmcli", "-t", "-f", "TYPE,STATE", "device", "status"]).stdout
+            if any(line == "wifi:connected" for line in out.splitlines()):
+                return True
+        except Exception:
+            pass
+    for path in glob.glob("/sys/class/net/*"):
+        name = os.path.basename(path)
+        if not os.path.exists(os.path.join(path, "wireless")):
+            continue
+        try:
+            with open(os.path.join(path, "operstate")) as f:
+                if f.read().strip() == "up":
+                    return True
+        except OSError:
+            continue
+    if shutil.which("iwgetid"):
+        try:
+            return bool(run_cmd(["iwgetid", "-r"]).stdout.strip())
+        except Exception:
+            pass
+    return False
 
 
 def read_internet():
@@ -132,22 +177,34 @@ def read_internet():
 
 def read_battery():
     """UPS HATs that expose a kernel power_supply driver show up here. A bare Pi 5 has none."""
+    observed = []
     for path in glob.glob("/sys/class/power_supply/*"):
+        name = os.path.basename(path)
         try:
             with open(os.path.join(path, "type")) as f:
-                if f.read().strip() != "Battery":
+                supply_type = f.read().strip()
+                if supply_type != "Battery":
+                    observed.append(f"{name}: type={supply_type}")
                     continue
             with open(os.path.join(path, "capacity")) as f:
                 percent = max(0, min(100, int(f.read().strip())))
             charging = None
+            status = "unknown"
             status_file = os.path.join(path, "status")
             if os.path.exists(status_file):
                 with open(status_file) as f:
-                    charging = f.read().strip() in ("Charging", "Full")
-            return {"percent": percent, "charging": charging}
-        except (OSError, ValueError):
+                    status = f.read().strip()
+                    charging = status in ("Charging", "Full")
+            result = {"percent": percent, "charging": charging}
+            observed.append(f"{name}: type=Battery capacity={percent} status={status}")
+            LOG.info("battery_probe result=%s supplies=%s", result, "; ".join(observed))
+            return result
+        except (OSError, ValueError) as exc:
+            observed.append(f"{name}: unreadable ({exc})")
             continue
-    return {"percent": None, "charging": None}
+    result = {"percent": None, "charging": None}
+    LOG.warning("battery_probe result=%s supplies=%s", result, "; ".join(observed) or "none")
+    return result
 
 
 def choose_led(s):
@@ -157,12 +214,10 @@ def choose_led(s):
         name = "amber"
     elif s["mode"] == "tool":
         name = "purple"
-    elif s["mode"] == "speaking":
-        name = "green"
     elif s["mode"] in ("listening", "recording"):
         name = "cyan"
     else:
-        name = "green" if s["internet"] else "blue"
+        name = "green"
     return name
 
 
@@ -173,18 +228,26 @@ def update_led():
         name = choose_led(STATE)
         rgb = LED_COLORS[name]
         STATE["led"] = {"name": name, "hex": "#%02x%02x%02x" % rgb}
-    if pixels is not None and rgb != _last_rgb:
+        mode = STATE["mode"]
+        mic_muted = STATE["mic_muted"]
+    changed = rgb != _last_rgb
+    if pixels is not None and changed:
         try:
             pixels[0] = rgb
             _last_rgb = rgb
         except Exception as exc:
             add_error(f"WS2812 write: {exc}")
+    elif changed:
+        _last_rgb = rgb
+    if changed:
+        LOG.info("led_state name=%s rgb=%s mode=%s mic_muted=%s", name, rgb, mode, mic_muted)
 
 
 def apply_switch():
     if button is None:
         return
-    mute = bool(button.is_pressed) == SWITCH_PRESSED_MUTES
+    with LOCK:
+        mute = not STATE["mic_muted"]
     try:
         set_mic_muted(mute)
     except Exception as exc:
@@ -195,13 +258,19 @@ def apply_switch():
     push_state()
 
 
+def sync_mic_state():
+    muted = read_mic_muted()
+    if muted is not None:
+        with LOCK:
+            STATE["mic_muted"] = muted
+
+
 def init_hardware():
     global button, pixels
     try:
         from gpiozero import Button
         button = Button(5, pull_up=False, bounce_time=0.2)
         button.when_pressed = apply_switch
-        button.when_released = apply_switch
         STATE["hardware"]["gpio_button"] = True
     except Exception as exc:
         button = None
@@ -214,8 +283,11 @@ def init_hardware():
     except Exception as exc:
         pixels = None
         add_error(f"WS2812 board.D13 init: {exc}")
-    apply_switch()
+    sync_mic_state()
     update_led()
+    LOG.info("hardware_initialized gpio_button=%s ws2812=%s audio_control=%s",
+             STATE["hardware"]["gpio_button"], STATE["hardware"]["ws2812"],
+             STATE["hardware"]["audio_control"])
 
 
 def monitor():
@@ -238,7 +310,16 @@ def monitor():
                 STATE["hardware"]["battery"] = changes["battery"]["percent"] is not None
             changed = any(STATE[k] != v for k, v in changes.items())
             STATE.update(changes)
+            follow_up_expired = (
+                STATE["mode"] == "listening"
+                and time.monotonic() - STATE["last_activity_at"] >= FOLLOW_UP_TIMEOUT_SECONDS
+            )
+            if follow_up_expired:
+                _set_mode("idle")
         if changed:
+            update_led()
+            push_state()
+        elif follow_up_expired:
             update_led()
             push_state()
         tick += 1
@@ -253,6 +334,7 @@ EVENT_TYPES = {"wake", "user_partial", "user_final", "assistant_start", "assista
 
 def _set_mode(mode):
     STATE["mode"] = mode
+    STATE["last_activity_at"] = time.monotonic()
     if mode == "recording":
         STATE["recording_started_at"] = STATE["recording_started_at"] or time.time()
     else:
@@ -284,7 +366,8 @@ def publish(event):
         elif etype == "assistant_token":
             _set_mode("speaking")
         elif etype == "assistant_done":
-            nxt = event.get("next_mode", "idle")
+            # Keep the wake-word conversation screen active for follow-ups.
+            nxt = event.get("next_mode", "listening")
             _set_mode(nxt if nxt in MODES else "idle")
         mode_changed = STATE["mode"] != before
     if etype not in ("mode", "recording"):
@@ -405,6 +488,11 @@ def index():
     return render_template("index.html")
 
 
+@app.get("/favicon.ico")
+def favicon():
+    return "", 204
+
+
 @app.get("/api/state")
 def get_state():
     return jsonify(_state_copy())
@@ -454,8 +542,6 @@ def action():
     data = request.get_json(silent=True) or {}
     if data.get("action") != "mic":
         return jsonify({"ok": False, "error": "Unknown action"}), 400
-    if button is not None:
-        return jsonify({"ok": False, "error": "Use the mute switch"}), 409
     with LOCK:
         new_value = not STATE["mic_muted"]
     try:

@@ -23,8 +23,8 @@ Run as your desktop user, not with sudo, so `wpctl` reaches your PipeWire sessio
 ## Screen
 
 - Header: state on the left (Ready / Listening / ● REC 00:42 / Thinking / Using tool / Responding / Muted).
-  Icons on the right: LED colour dot, Wi-Fi (filled green = connected, empty outline = not), mic (green,
-  or red with a slash when muted; tap to toggle if no hardware switch), battery %.
+  The right side has Wi-Fi (filled green = connected, amber = connected without internet, empty outline = off),
+  mic (green, or red with a slash when muted), and battery percentage.
 - Body, wake-word conversation: full-height chat. Under each reply:
   `TTFT · total · tok/s` and `in · out · avg ms/tok` (hover for the full names).
 - Body, recording mode: big waveform, timer and live transcript card. When recording stops, the
@@ -35,7 +35,7 @@ Run as your desktop user, not with sudo, so `wpctl` reaches your PipeWire sessio
 
 | Part | How it's used |
 |---|---|
-| Latching push switch, GPIO 5 | Switch position sets mic mute (`SWITCH_PRESSED_MUTES` in app.py). Synced on startup. |
+| Momentary push button, GPIO 5 | Each press toggles mic mute. |
 | USB mic (default source) | `wpctl set-mute @DEFAULT_AUDIO_SOURCE@` |
 | MAX98357A speaker | Not shown on screen. |
 | WS2812, board.D13 | One pixel, brightness 0.3, written only when the colour changes. |
@@ -44,6 +44,20 @@ Run as your desktop user, not with sudo, so `wpctl` reaches your PipeWire sessio
 One background thread polls Wi-Fi (3s), internet (5s), mic mute (2s) and battery (15s), and pushes
 only changes to the browser over Server-Sent Events. The browser does no polling.
 
+## Hardware log
+
+The app writes a rotating diagnostic log to `logs/span.log` (three 256 KB backups). It records every
+battery probe with the detected `/sys/class/power_supply` devices, their type, capacity and charge
+status, as well as GPIO, audio and LED initialization errors. After running the app on the Pi for a
+minute, share this output when diagnosing battery detection:
+
+```bash
+tail -n 200 logs/span.log
+```
+
+Set `SPAN_LOG_FILE=/path/to/span.log` before starting the app to store it elsewhere. Log files are
+excluded from Git.
+
 LED priority (highest first):
 
 | Condition | Colour |
@@ -51,10 +65,8 @@ LED priority (highest first):
 | Mic muted | red |
 | Thinking | amber |
 | Using a tool | purple |
-| Responding | green |
 | Listening / recording | cyan |
-| Idle, internet up | green |
-| Idle, no internet | blue |
+| Responding or ready with mic on | green |
 
 ## Pipeline integration
 
@@ -78,7 +90,9 @@ $E '{"type":"mode","mode":"idle"}'                                 # set mode di
 $E '{"type":"error","message":"STT failed"}'
 ```
 
-`assistant_done` accepts `"next_mode":"listening"` to keep the conversation open (default `idle`).
+`assistant_done` keeps the conversation ready for a follow-up (default `listening`). After ten seconds
+without another pipeline event it returns to the ready screen; configure this with
+`FOLLOW_UP_TIMEOUT_SECONDS`. Pass `"next_mode":"idle"` to return immediately.
 While recording, `user_partial` / `user_final` go to the recording card instead of the chat.
 Ids only need to be unique among bubbles still in progress, so reusing `u1`/`a1` every turn is fine.
 

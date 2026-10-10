@@ -74,7 +74,7 @@ function render() {
   if (!S) return;
   const mode = S.mode;
   const recording = mode === 'recording';
-  const s = !connected ? 'idle' : S.mic_muted ? 'muted' : mode;
+  const s = S.mic_muted ? 'muted' : mode;
   screen.dataset.s = s;
   screen.classList.toggle('rec-on', recording);
 
@@ -83,7 +83,7 @@ function render() {
     : S.mic_muted ? 'Muted' : LABEL[mode] || mode;
 
   const loader = flash || (!connected ? 'Reconnecting…'
-    : S.mic_muted ? (S.hardware.gpio_button ? 'Mic muted · flip switch' : 'Mic muted')
+    : S.mic_muted ? 'Mic muted · tap to unmute'
     : mode === 'tool' ? `Using ${toolName || 'tool'}…` : LOADER[mode] || '');
   $('loaderText').textContent = loader;
   const sub = $('emptySub');
@@ -92,6 +92,7 @@ function render() {
   root.style.setProperty('--led', S.led.hex);
   const wifi = $('wifi');
   wifi.classList.toggle('off', !S.wifi);
+  wifi.classList.toggle('no-internet', S.wifi && !S.internet);
   wifi.setAttribute('aria-label', S.wifi ? (S.internet ? 'Wi-Fi connected' : 'Wi-Fi connected, no internet') : 'Wi-Fi off');
   $('mic').classList.toggle('muted', S.mic_muted);
   $('mic').setAttribute('aria-label', S.mic_muted ? 'Microphone muted' : 'Microphone on');
