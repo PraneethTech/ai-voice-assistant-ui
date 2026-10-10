@@ -112,6 +112,27 @@ def test_header_has_only_wifi_and_mic():
 def test_screen_stays_240x320():
     css = open(os.path.join(span.app.root_path, "static", "style.css")).read()
     assert "width:240px" in css.replace(" ", "") and "height:320px" in css.replace(" ", "")
+    compact = css.replace(" ", "")
+    assert ".status{height:22px" in compact and ".loader{height:18px" in compact, \
+        "header/loader stay compact so chat keeps maximum area"
+    assert "data-s=idle]{--c:var(--green)}" in compact, "idle screen is green"
+
+
+def test_static_files_revalidated():
+    assert span.app.config["SEND_FILE_MAX_AGE_DEFAULT"] == 0, \
+        "kiosk browsers must revalidate CSS/JS, never run stale cache"
+
+
+def test_wifi_off_outline_visible():
+    css = open(os.path.join(span.app.root_path, "static", "style.css")).read()
+    assert ".wifi.off" in css and "#667085" in css, "off outline must be visible on light bg"
+
+
+def test_log_endpoint(client):
+    r = client.get("/api/log?lines=5")
+    assert r.status_code == 200
+    body = r.get_json()
+    assert "lines" in body and isinstance(body["lines"], list) and len(body["lines"]) <= 5
 
 
 def test_header_state_not_duplicated_as_heading():

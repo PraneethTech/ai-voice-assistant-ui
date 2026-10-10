@@ -20,6 +20,7 @@ import threading
 import time
 
 app = Flask(__name__)
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0  # LAN kiosk: always revalidate tiny static files
 LOCK = threading.RLock()
 
 
@@ -262,6 +263,7 @@ def apply_switch():
         add_error(f"Microphone mute: {exc}")
     with LOCK:
         STATE["mic_muted"] = mute
+    LOG.info("mic_mute_toggle muted=%s", mute)
     update_led()
     push_state()
 
@@ -384,6 +386,8 @@ def publish(event):
             _set_mode(nxt if nxt in MODES else "idle")
         mode_changed = STATE["mode"] != before
         light_changed = STATE["light_enabled"] != before_light_enabled
+        if mode_changed:
+            LOG.info("mode_change %s -> %s (%s)", before, STATE["mode"], etype)
     if etype not in ("mode", "recording", "light"):
         if recording and etype.startswith("user_"):
             event = dict(event, recording=True)
@@ -408,6 +412,22 @@ def favicon():
 @app.get("/api/state")
 def get_state():
     return jsonify(_state_copy())
+
+
+@app.get("/api/log")
+def get_log():
+    """Tail the hardware log for remote diagnosis (no SSH needed)."""
+    try:
+        count = max(1, min(500, int(request.args.get("lines", "100"))))
+    except ValueError:
+        count = 100
+    path = os.environ.get("SPAN_LOG_FILE", os.path.join(app.root_path, "logs", "span.log"))
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()[-count:]
+    except OSError:
+        lines = []
+    return jsonify({"lines": [line.rstrip("\n") for line in lines]})
 
 
 @app.get("/api/events")

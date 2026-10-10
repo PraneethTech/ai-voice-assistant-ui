@@ -19,13 +19,13 @@ body{display:grid;place-items:center;font:12px/1.45 system-ui,-apple-system,"Seg
 .screen[data-s=tool]{--c:var(--amber)}.screen[data-s=speaking]{--c:var(--amber)}.screen[data-s=muted]{--c:var(--red)}
 
 /* Header: state word left, icons right */
-.status{height:24px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 8px;border-bottom:1px solid var(--line);position:relative}
+.status{height:22px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 8px;border-bottom:1px solid var(--line);position:relative}
 .state{font-size:10px;font-weight:700;color:var(--c);font-variant-numeric:tabular-nums;white-space:nowrap;text-transform:uppercase;letter-spacing:.8px;opacity:.9}
 .brand-top{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:8px;font-weight:700;letter-spacing:2.5px;color:var(--dim);pointer-events:none}
 .icons{display:flex;align-items:center;gap:6px}
 .ic{width:13px;height:11px;display:block}
 .wifi path{fill:var(--green);stroke:var(--green);stroke-width:1.2;stroke-linejoin:round}
-.wifi.off path{fill:none;stroke:var(--dim)}
+.wifi.off path{fill:none;stroke:#667085}
 .mic{width:14px;height:18px;display:grid;place-items:center}
 .mic .ic{width:11px;height:13px}
 .mic-body{fill:var(--green)}.mic-arc{fill:none;stroke:var(--green);stroke-width:1.3;stroke-linecap:round}.mic-slash{stroke:none}
@@ -73,7 +73,7 @@ body{display:grid;place-items:center;font:12px/1.45 system-ui,-apple-system,"Seg
 .rec-card .partial{color:var(--muted)}
 
 /* Fixed loader row */
-.loader{height:20px;flex:none;display:flex;align-items:center;justify-content:center;gap:6px;border-top:1px solid var(--line);font-size:10px;font-weight:600;color:var(--c)}
+.loader{height:18px;flex:none;display:flex;align-items:center;justify-content:center;gap:6px;border-top:1px solid var(--line);font-size:10px;font-weight:600;color:var(--c)}
 .screen[data-s=idle] .loader{color:var(--green)}
 .viz{display:grid;place-items:center;height:12px}
 .viz>span{grid-area:1/1;display:none;align-items:center;gap:2px}
