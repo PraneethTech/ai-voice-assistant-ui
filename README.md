@@ -15,8 +15,7 @@ python app.py                # PORT=5055 python app.py to change the port
 
 - Device frame view: `http://<PI-IP>:5000/`
 - Bare screen for the Pi's own display (Chromium kiosk): `http://127.0.0.1:5000/?kiosk=1`
-- `?scale=1` renders at true 1x size. `?demo=1` plays the chat demo on load.
-- Keys `1` `2` `3` `4` play the demos: chat, recording, offline, interrupt.
+- `?scale=1` renders at true 1x size.
 
 Stop any old TFT script first so it doesn't compete for GPIO 5 or the WS2812 (`pgrep -af final.py`).
 Run as your desktop user, not with sudo, so `wpctl` reaches your PipeWire session.

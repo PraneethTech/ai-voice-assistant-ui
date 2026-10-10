@@ -10,7 +10,6 @@ const MAX_ITEMS = 60;
 let S = null;            // last state from the server
 let connected = false;
 let toolName = '';
-let flash = null;        // transient message shown in the loader row
 let recTimer = null;
 let wasRecording = false;
 let rec = {finals: [], partial: ''};
@@ -80,11 +79,12 @@ function render() {
   screen.classList.toggle('voice-on', mode === 'idle' && !recording);
 
   $('stateLabel').textContent = !connected ? 'Reconnecting…'
+    : S.mic_muted ? 'Muted'
     : recording ? `● REC ${elapsed()}`
-    : S.mic_muted ? 'Muted' : LABEL[mode] || mode;
+    : LABEL[mode] || mode;
 
-  const loader = flash || (!connected ? 'Reconnecting…'
-    : S.mic_muted ? 'Mic muted · use device button'
+  const loader = !connected ? 'Reconnecting…'
+    : S.mic_muted ? 'Mic muted'
     : mode === 'tool' ? `Using ${toolName || 'tool'}…` : LOADER[mode] || '');
   $('loaderText').textContent = loader;
   const sub = $('emptySub');
@@ -175,7 +175,6 @@ function onEvent(e) {
     case 'state':
       S = e.state;
       render();
-      if (params.get('demo') === '1' && !onEvent.demoed) { onEvent.demoed = true; demo('chat'); }
       return;
     case 'wake':
       pending.clear();
@@ -251,29 +250,6 @@ function connect() {
 }
 
 // ---------- controls ----------
-function showFlash(text) {
-  flash = text;
-  render();
-  clearTimeout(showFlash.t);
-  showFlash.t = setTimeout(() => { flash = null; render(); }, 2500);
-}
-
-async function post(url, body) {
-  try {
-    const r = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
-    const data = await r.json().catch(() => ({}));
-    if (!r.ok || !data.ok) showFlash(data.error || `Error ${r.status}`);
-  } catch {
-    showFlash('Server unreachable');
-  }
-}
-
-function demo(scenario) { post('/api/demo', {scenario}); }
-
-addEventListener('keydown', (e) => {
-  const scenario = {1: 'chat', 2: 'recording', 3: 'offline', 4: 'interrupt'}[e.key];
-  if (scenario) demo(scenario);
-});
 document.addEventListener('visibilitychange', () => root.classList.toggle('paused', document.hidden));
 
 // Waveform envelope for the recording view: tall in the middle, short at the edges.

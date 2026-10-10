@@ -46,16 +46,6 @@ def stable_state(monkeypatch):
     span.HISTORY.clear()
     span.HISTORY.extend(saved_history)
     span._last_rgb = saved_last_rgb
-    # release demo lock if a test left it held
-    try:
-        span.DEMO_LOCK.release()
-    except (RuntimeError, threading_error()) if False else Exception:
-        pass
-
-
-def threading_error():
-    import threading
-    return threading.ThreadError
 
 
 def base_state(**over):
@@ -146,6 +136,9 @@ def test_no_repeated_prompts_across_views():
     assert 'class="say"' not in html
     assert "Waiting for wake word" in js
     assert js.count("Say “Hey Jarvis”") == 1, "prompt must appear once (voiceSub only)"
+    assert js.lower().count("use the device button") == 1, \
+        "device-button hint lives only on standby body, not in loader"
+    assert "S.mic_muted ? 'Muted'" in js, "muted wins over REC in header"
 
 
 def test_light_theme_and_readability():
@@ -417,21 +410,10 @@ def test_thinking_done_idle_light_flow_via_api(client):
     assert st["led"]["hex"] == "#%02x%02x%02x" % span.LED_COLORS["green"]
 
 
-def test_post_demo_validation_and_lock(client, monkeypatch):
-    r = client.post("/api/demo", json={"scenario": "nope"})
-    assert r.status_code == 400
-    # avoid spawning real sleeping demo threads
-    monkeypatch.setattr(span.threading, "Thread", lambda *a, **k: DummyThread())
-    r = client.post("/api/demo", json={"scenario": "chat"})
-    assert r.status_code == 200 and r.get_json()["ok"] is True
-
-
-class DummyThread:
-    def __init__(self, *a, **k):
-        pass
-
-    def start(self):
-        pass
+def test_no_demo_endpoint(client):
+    assert client.post("/api/demo", json={"scenario": "chat"}).status_code == 404
+    assert not hasattr(span, "DEMOS") and not hasattr(span, "DEMO_LOCK"), \
+        "dev demo hooks removed"
 
 
 def test_broadcast_history_and_slow_client_resync():
@@ -476,13 +458,20 @@ def test_read_internet_true_false(monkeypatch):
     assert span.read_internet() is False
 
 
-def test_metrics_keys_documented():
-    # demo answer builds the exact metrics dict shown under each reply
-    import inspect
-    src = inspect.getsource(span._answer)
+def test_metrics_keys_documented(client):
+    # README documents the exact metrics dict the pipeline sends with assistant_done,
+    # and the API accepts it end to end.
+    md = open(os.path.join("README.md")).read()
     for k in ("ttft_ms", "total_ms", "gen_ms", "tpot_ms", "tokens_per_sec",
               "input_tokens", "output_tokens"):
-        assert k in src, k
+        assert k in md, k
+    set_state(mode="speaking")
+    r = client.post("/api/event", json={"type": "assistant_done", "id": "a-m",
+                                        "metrics": {"ttft_ms": 420, "total_ms": 1900,
+                                                    "gen_ms": 1480, "tpot_ms": 61.7,
+                                                    "tokens_per_sec": 16.2,
+                                                    "input_tokens": 312, "output_tokens": 24}})
+    assert r.status_code == 200 and r.get_json()["ok"] is True
 
 
 def test_fixed_loader_selectors_exist():

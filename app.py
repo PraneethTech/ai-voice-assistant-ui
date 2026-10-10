@@ -13,7 +13,6 @@ import logging
 from logging.handlers import RotatingFileHandler
 import os
 import queue
-import random
 import shutil
 import socket
 import subprocess
@@ -204,7 +203,10 @@ def read_battery():
             observed.append(f"{name}: unreadable ({exc})")
             continue
     result = {"percent": None, "charging": None, "status": "unavailable"}
-    LOG.warning("battery_probe result=%s supplies=%s", result, "; ".join(observed) or "none")
+    if observed:
+        LOG.warning("battery_probe result=%s supplies=%s", result, "; ".join(observed))
+    else:
+        LOG.debug("battery_probe result=%s supplies=none (mains-powered)", result)
     return result
 
 
@@ -391,108 +393,6 @@ def publish(event):
         push_state()
 
 
-# ---------- demo scenarios (UI testing without the pipeline) ----------
-
-DEMO_LOCK = threading.Lock()
-
-
-def _say_user(uid, text, gap=(0.12, 0.25)):
-    words = text.split()
-    for i in range(1, len(words) + 1):
-        publish({"type": "user_partial", "id": uid, "text": " ".join(words[:i])})
-        time.sleep(random.uniform(*gap))
-    publish({"type": "user_final", "id": uid, "text": text})
-
-
-def _answer(aid, text, input_tokens, stop_after=None):
-    start = time.perf_counter()
-    publish({"type": "assistant_start", "id": aid})
-    time.sleep(random.uniform(0.35, 0.7))
-    first = None
-    words = text.split()
-    for i, word in enumerate(words):
-        if stop_after is not None and i >= stop_after:
-            publish({"type": "assistant_interrupted", "id": aid})
-            return
-        if first is None:
-            first = time.perf_counter()
-        publish({"type": "assistant_token", "id": aid, "text": word + (" " if i < len(words) - 1 else "")})
-        time.sleep(random.uniform(0.04, 0.09))
-    end = time.perf_counter()
-    out_tokens = max(1, round(len(words) * 1.3))  # demo estimate; real pipeline reports exact counts
-    gen_ms = (end - first) * 1000
-    publish({"type": "assistant_done", "id": aid, "metrics": {
-        "ttft_ms": round((first - start) * 1000),
-        "total_ms": round((end - start) * 1000),
-        "gen_ms": round(gen_ms),
-        "tpot_ms": round(gen_ms / max(1, out_tokens - 1), 1),
-        "tokens_per_sec": round(out_tokens / max(gen_ms / 1000, 0.001), 1),
-        "input_tokens": input_tokens,
-        "output_tokens": out_tokens,
-    }})
-
-
-def _tool(tid, name, ok=True, detail=""):
-    publish({"type": "tool", "id": tid, "name": name, "status": "start"})
-    time.sleep(random.uniform(0.5, 0.9))
-    publish({"type": "tool", "id": tid, "name": name, "status": "ok" if ok else "error", "detail": detail})
-
-
-def demo_chat():
-    publish({"type": "wake"})
-    time.sleep(0.4)
-    _say_user("u1", "What's the weather in Hyderabad today?")
-    _tool("t1", "get_location", detail="Hyderabad, IN")
-    _tool("t2", "get_weather", detail="31°C, partly cloudy")
-    _answer("a1", "It's 31 degrees and partly cloudy in Hyderabad right now. "
-                  "There's a small chance of light rain after 6 PM, so keep an umbrella handy.", 412)
-
-
-def demo_recording():
-    publish({"type": "recording", "on": True})
-    time.sleep(0.5)
-    _say_user("r1", "Agenda for today. Finish the Pi audio driver, review the wake word dataset, "
-                    "and call the hardware vendor about the speaker grille.", gap=(0.15, 0.3))
-    time.sleep(1.2)
-    publish({"type": "recording", "on": False})
-
-
-def demo_offline():
-    publish({"type": "wake"})
-    time.sleep(0.4)
-    _say_user("u2", "What is the latest news in the USA?")
-    _tool("t3", "web_search", ok=False, detail="No internet connection")
-    _answer("a2", "I can't reach the internet right now, so I can't look up the latest news. "
-                  "Turn Wi-Fi back on and ask me again.", 298)
-
-
-def demo_interrupt():
-    publish({"type": "wake"})
-    time.sleep(0.4)
-    _say_user("u3", "Tell me about the Raspberry Pi 5")
-    _answer("a3", "The Raspberry Pi 5 is a single board computer with a quad core Cortex A76 "
-                  "processor running at 2.4 gigahertz, up to 16 gigabytes of memory, and a new RP1 "
-                  "input output chip that", 280, stop_after=14)
-    _say_user("u4", "Stop. Just tell me the RAM options.")
-    _answer("a4", "It comes with 2, 4, 8 or 16 gigabytes of RAM.", 334)
-
-
-DEMOS = {"chat": demo_chat, "recording": demo_recording, "offline": demo_offline, "interrupt": demo_interrupt}
-
-
-def _run_demo(fn):
-    try:
-        fn()
-    except Exception as exc:
-        broadcast({"type": "error", "message": f"Demo failed: {exc}"})
-        with LOCK:
-            _set_mode("idle")
-        update_led()
-        push_state()
-    finally:
-        DEMO_LOCK.release()
-
-
 # ---------- routes ----------
 
 @app.get("/")
@@ -546,17 +446,6 @@ def post_event():
         publish(data)
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
-    return jsonify({"ok": True})
-
-
-@app.post("/api/demo")
-def demo():
-    fn = DEMOS.get((request.get_json(silent=True) or {}).get("scenario"))
-    if fn is None:
-        return jsonify({"ok": False, "error": "scenario must be one of " + ", ".join(DEMOS)}), 400
-    if not DEMO_LOCK.acquire(blocking=False):
-        return jsonify({"ok": False, "error": "A demo is already running"}), 409
-    threading.Thread(target=_run_demo, args=(fn,), daemon=True).start()
     return jsonify({"ok": True})
 
 
