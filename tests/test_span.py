@@ -144,6 +144,14 @@ def test_header_state_not_duplicated_as_heading():
     assert ".voiceviewstrong{font-size:17px" in css
 
 
+def test_stream_fallback_paints_state_without_sse():
+    # The screen must self-correct even where the event stream never connects:
+    # one-shot /api/state paint on load + 3s re-pull while disconnected.
+    js = open(os.path.join(span.app.root_path, "static", "app.js")).read()
+    assert "fetch('/api/state'" in js, "initial truth pull required"
+    assert "setInterval" in js and "if (!connected)" in js, "poll-while-down fallback required"
+
+
 def test_span_wordmark_fixed_in_header_all_screens():
     html = open(os.path.join(span.app.root_path, "templates", "index.html")).read()
     assert 'class="brand-top"' in html and ">SPAN<" in html

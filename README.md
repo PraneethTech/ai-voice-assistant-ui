@@ -52,7 +52,8 @@ or a `GPIO 5 switch init` error (button not initialised).
 | Battery | Probed from `/sys/class/power_supply/*` for logs/diagnostics only; not shown on screen (mains-powered Pi). |
 
 One background thread polls Wi-Fi (3s), internet (5s), mic mute (2s) and battery (15s), and pushes
-only changes to the browser over Server-Sent Events. The browser does no polling.
+only changes to the browser over Server-Sent Events. The browser is push-first: it paints
+`/api/state` once on load and re-pulls it every 3s only while the stream is down.
 
 ## Hardware log
 

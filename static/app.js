@@ -233,7 +233,19 @@ function onEvent(e) {
   }
 }
 
+async function syncState() {
+  // One-shot truth pull: paints the real state on load and rescues the screen
+  // wherever the SSE stream is blocked (hotspot middleboxes buffer streams).
+  try {
+    const r = await fetch('/api/state', {cache: 'no-store'});
+    if (r.ok) { S = await r.json(); render(); }
+  } catch {
+    connected = false; render();
+  }
+}
+
 function connect() {
+  syncState();
   const es = new EventSource('/api/events');   // reconnects on its own (server sends retry: 2000)
   es.onopen = () => {
     // The server replays recent history on every (re)connect, so start from a clean log.
@@ -247,6 +259,9 @@ function connect() {
   es.onmessage = (m) => {
     try { onEvent(JSON.parse(m.data)); } catch (err) { console.error(err); }
   };
+  // Fallback: while the stream is down, poll the truth every 3s so the
+  // screen (wifi/mute/light) can never freeze on stale defaults.
+  setInterval(() => { if (!connected) syncState(); }, 3000);
 }
 
 // ---------- controls ----------
