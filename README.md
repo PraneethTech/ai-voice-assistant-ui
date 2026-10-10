@@ -67,6 +67,8 @@ LED priority (highest first):
 | Using a tool | purple |
 | Listening / recording | cyan |
 | Responding or ready with mic on | green |
+| Ready with no internet or Wi-Fi | blue |
+| Explicit light-off event | off |
 
 ## Pipeline integration
 
@@ -86,6 +88,8 @@ $E '{"type":"assistant_done","id":"a1","metrics":{"ttft_ms":420,"total_ms":1900,
 $E '{"type":"assistant_interrupted","id":"a1"}'                    # user barged in -> listening
 $E '{"type":"recording","on":true}'                                # push switch -> recording view
 $E '{"type":"recording","on":false}'
+$E '{"type":"light","on":false}'                               # -> WS2812 off for a hardware test
+$E '{"type":"light","on":true}'                                # -> restore the state colour
 $E '{"type":"mode","mode":"idle"}'                                 # set mode directly
 $E '{"type":"error","message":"STT failed"}'
 ```

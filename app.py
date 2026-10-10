@@ -58,7 +58,8 @@ LED_COLORS = {
     "purple": (150, 0, 255),   # using a tool
     "green": (34, 197, 94),    # mic on / responding / ready
     "cyan": (34, 211, 238),    # listening / recording
-    "blue": (59, 130, 246),    # reserved for offline indication
+    "blue": (59, 130, 246),    # Wi-Fi or internet unavailable
+    "off": (0, 0, 0),          # explicit light-off test or hardware setting
 }
 MODES = ("idle", "listening", "recording", "thinking", "tool", "speaking")
 
@@ -66,6 +67,7 @@ STATE = {
     "wifi": False,
     "internet": False,
     "mic_muted": False,
+    "light_enabled": True,
     "battery": {"percent": None, "charging": None},
     "mode": "idle",
     "last_activity_at": time.monotonic(),
@@ -208,7 +210,9 @@ def read_battery():
 
 
 def choose_led(s):
-    if s["mic_muted"]:
+    if not s["light_enabled"]:
+        name = "off"
+    elif s["mic_muted"]:
         name = "red"
     elif s["mode"] == "thinking":
         name = "amber"
@@ -216,6 +220,8 @@ def choose_led(s):
         name = "purple"
     elif s["mode"] in ("listening", "recording"):
         name = "cyan"
+    elif not s["internet"]:
+        name = "blue"
     else:
         name = "green"
     return name
@@ -230,6 +236,9 @@ def update_led():
         STATE["led"] = {"name": name, "hex": "#%02x%02x%02x" % rgb}
         mode = STATE["mode"]
         mic_muted = STATE["mic_muted"]
+        wifi = STATE["wifi"]
+        internet = STATE["internet"]
+        light_enabled = STATE["light_enabled"]
     changed = rgb != _last_rgb
     if pixels is not None and changed:
         try:
@@ -240,7 +249,8 @@ def update_led():
     elif changed:
         _last_rgb = rgb
     if changed:
-        LOG.info("led_state name=%s rgb=%s mode=%s mic_muted=%s", name, rgb, mode, mic_muted)
+        LOG.info("led_state name=%s rgb=%s mode=%s mic_muted=%s wifi=%s internet=%s enabled=%s",
+                 name, rgb, mode, mic_muted, wifi, internet, light_enabled)
 
 
 def apply_switch():
@@ -329,7 +339,7 @@ def monitor():
 # ---------- events from the voice pipeline ----------
 
 EVENT_TYPES = {"wake", "user_partial", "user_final", "assistant_start", "assistant_token",
-               "assistant_done", "assistant_interrupted", "tool", "error", "mode", "recording"}
+               "assistant_done", "assistant_interrupted", "tool", "error", "mode", "recording", "light"}
 
 
 def _set_mode(mode):
@@ -348,8 +358,13 @@ def publish(event):
         raise ValueError(f"unknown event type: {etype!r}")
     with LOCK:
         before = STATE["mode"]
+        before_light_enabled = STATE["light_enabled"]
         recording = before == "recording"
-        if etype == "mode":
+        if etype == "light":
+            if not isinstance(event.get("on"), bool):
+                raise ValueError("light event requires boolean on")
+            STATE["light_enabled"] = event["on"]
+        elif etype == "mode":
             if event.get("mode") not in MODES:
                 raise ValueError("mode must be one of " + ", ".join(MODES))
             _set_mode(event["mode"])
@@ -370,11 +385,12 @@ def publish(event):
             nxt = event.get("next_mode", "listening")
             _set_mode(nxt if nxt in MODES else "idle")
         mode_changed = STATE["mode"] != before
-    if etype not in ("mode", "recording"):
+        light_changed = STATE["light_enabled"] != before_light_enabled
+    if etype not in ("mode", "recording", "light"):
         if recording and etype.startswith("user_"):
             event = dict(event, recording=True)
         broadcast(event)
-    if mode_changed or etype in ("mode", "recording"):
+    if mode_changed or light_changed or etype in ("mode", "recording", "light"):
         update_led()
         push_state()
 
