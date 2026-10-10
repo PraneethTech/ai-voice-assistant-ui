@@ -254,11 +254,15 @@ def update_led():
 
 def apply_switch():
     if button is None:
+        add_error("GPIO 5 switch pressed but button is not initialised")
         return
     with LOCK:
         mute = not STATE["mic_muted"]
     try:
         set_mic_muted(mute)
+        verify = read_mic_muted()
+        if verify is not None and verify != mute:
+            add_error(f"Microphone mute not applied: wanted {mute}, hardware reports {verify}")
     except Exception as exc:
         add_error(f"Microphone mute: {exc}")
     with LOCK:
@@ -282,6 +286,7 @@ def init_hardware():
         button = Button(5, pull_up=False, bounce_time=0.2)
         button.when_pressed = apply_switch
         STATE["hardware"]["gpio_button"] = True
+        LOG.info("gpio_button pin=5 pull_up=False bounce_time=0.2s")
     except Exception as exc:
         button = None
         add_error(f"GPIO 5 switch init: {exc}")
@@ -318,6 +323,9 @@ def monitor():
         with LOCK:
             if "battery" in changes:
                 STATE["hardware"]["battery"] = changes["battery"]["percent"] is not None
+            if "mic_muted" in changes and STATE["mic_muted"] != changes["mic_muted"]:
+                LOG.info("mic_muted_poll muted=%s (hardware overrode UI state)",
+                         changes["mic_muted"])
             changed = any(STATE[k] != v for k, v in changes.items())
             STATE.update(changes)
             follow_up_expired = (

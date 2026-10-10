@@ -162,6 +162,47 @@ def test_no_repeated_prompts_across_views():
     assert "S.mic_muted ? 'Muted'" in js, "muted wins over REC in header"
 
 
+def test_js_ids_all_exist_in_html():
+    # Guards the mixed-version crash: every $('id') the JS touches must exist,
+    # otherwise render() throws and the whole screen (wifi/mute included) freezes.
+    import re
+    js = open(os.path.join(span.app.root_path, "static", "app.js")).read()
+    html = open(os.path.join(span.app.root_path, "templates", "index.html")).read()
+    used = set(re.findall(r"\$\('([A-Za-z]+)'\)", js)) - {"empty"}
+    present = set(re.findall(r'id="([A-Za-z]+)"', html))
+    assert used <= present, f"JS touches missing ids: {used - present}"
+
+
+def test_static_urls_versioned():
+    html = open(os.path.join(span.app.root_path, "templates", "index.html")).read()
+    assert "style.css" in html and "app.js" in html and "v='3'" in html, \
+        "versioned static URLs force fresh fetch after deploys"
+
+
+def test_mute_switch_verifies_hardware(monkeypatch):
+    calls = []
+    monkeypatch.setattr(span, "set_mic_muted", lambda m: calls.append(m))
+    monkeypatch.setattr(span, "read_mic_muted", lambda: calls[-1] if calls else False)
+    monkeypatch.setattr(span, "button", object())  # pretend GPIO initialised
+    with span.LOCK:
+        span.STATE["mic_muted"] = False
+    span.apply_switch()
+    assert calls == [True] and span.STATE["mic_muted"] is True
+    assert "Microphone mute not applied" not in ";".join(span.STATE["hardware"]["errors"])
+
+
+def test_mute_switch_reports_unapplied(monkeypatch):
+    monkeypatch.setattr(span, "set_mic_muted", lambda m: None)  # silently does nothing
+    monkeypatch.setattr(span, "read_mic_muted", lambda: False)  # hardware never flips
+    monkeypatch.setattr(span, "button", object())
+    with span.LOCK:
+        span.STATE["mic_muted"] = False
+        span.STATE["hardware"]["errors"] = []
+    span.apply_switch()
+    assert any("not applied" in e for e in span.STATE["hardware"]["errors"]), \
+        "a mute press the hardware ignores must leave an error, not silence"
+
+
 def test_light_theme_and_readability():
     css = open(os.path.join(span.app.root_path, "static", "style.css")).read()
     assert "color-scheme:light" in css.replace(" ", "")

@@ -20,6 +20,13 @@ python app.py                # PORT=5055 python app.py to change the port
 Stop any old TFT script first so it doesn't compete for GPIO 5 or the WS2812 (`pgrep -af final.py`).
 Run as your desktop user, not with sudo, so `wpctl` reaches your PipeWire session.
 
+After every update on the Pi: `git pull`, restart `app.py`, refresh the browser once.
+Static files are versioned (`?v=3`) plus `no-cache`, so a refresh always loads the
+matching HTML/JS/CSS set — never debug visuals on a stale copy. If mute presses do
+nothing, check `GET /api/log`: `mic_mute_toggle` (press seen), `Microphone mute not
+applied` (hardware ignored it), `mic_muted_poll` (2s hardware poll reverted the UI),
+or a `GPIO 5 switch init` error (button not initialised).
+
 ## Screen
 
 - Header: state micro-label on the left (Ready / Listening / ● REC 00:42 / Thinking / Using tool / Responding / Muted),
