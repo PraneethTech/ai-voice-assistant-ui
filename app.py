@@ -68,7 +68,7 @@ STATE = {
     "internet": False,
     "mic_muted": False,
     "light_enabled": True,
-    "battery": {"percent": None, "charging": None},
+    "battery": {"percent": None, "charging": None, "status": "unavailable"},
     "mode": "idle",
     "last_activity_at": time.monotonic(),
     "recording_started_at": None,
@@ -196,15 +196,15 @@ def read_battery():
             if os.path.exists(status_file):
                 with open(status_file) as f:
                     status = f.read().strip()
-                    charging = status in ("Charging", "Full")
-            result = {"percent": percent, "charging": charging}
+                    charging = status == "Charging"
+            result = {"percent": percent, "charging": charging, "status": status}
             observed.append(f"{name}: type=Battery capacity={percent} status={status}")
             LOG.info("battery_probe result=%s supplies=%s", result, "; ".join(observed))
             return result
         except (OSError, ValueError) as exc:
             observed.append(f"{name}: unreadable ({exc})")
             continue
-    result = {"percent": None, "charging": None}
+    result = {"percent": None, "charging": None, "status": "unavailable"}
     LOG.warning("battery_probe result=%s supplies=%s", result, "; ".join(observed) or "none")
     return result
 
@@ -550,24 +550,6 @@ def post_event():
         publish(data)
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
-    return jsonify({"ok": True})
-
-
-@app.post("/api/action")
-def action():
-    data = request.get_json(silent=True) or {}
-    if data.get("action") != "mic":
-        return jsonify({"ok": False, "error": "Unknown action"}), 400
-    with LOCK:
-        new_value = not STATE["mic_muted"]
-    try:
-        set_mic_muted(new_value)
-    except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
-    with LOCK:
-        STATE["mic_muted"] = new_value
-    update_led()
-    push_state()
     return jsonify({"ok": True})
 
 

@@ -77,17 +77,20 @@ function render() {
   const s = S.mic_muted ? 'muted' : mode;
   screen.dataset.s = s;
   screen.classList.toggle('rec-on', recording);
+  screen.classList.toggle('voice-on', mode === 'idle' && !recording);
 
   $('stateLabel').textContent = !connected ? 'Reconnecting…'
     : recording ? `● REC ${elapsed()}`
     : S.mic_muted ? 'Muted' : LABEL[mode] || mode;
 
   const loader = flash || (!connected ? 'Reconnecting…'
-    : S.mic_muted ? 'Mic muted · tap to unmute'
+    : S.mic_muted ? 'Mic muted · use device button'
     : mode === 'tool' ? `Using ${toolName || 'tool'}…` : LOADER[mode] || '');
   $('loaderText').textContent = loader;
   const sub = $('emptySub');
   if (sub) sub.textContent = S.mic_muted ? 'Mic muted' : S.internet ? 'Online' : 'Offline mode';
+  $('voiceTitle').textContent = S.mic_muted ? 'Microphone muted' : 'Ready';
+  $('voiceSub').textContent = S.mic_muted ? 'Use the device button' : 'Say “Hey Jarvis”';
 
   root.style.setProperty('--led', S.led.hex);
   const wifi = $('wifi');
@@ -102,7 +105,7 @@ function render() {
   $('batFill').style.width = has ? `${b.percent}%` : '0';
   $('batFill').classList.toggle('low', has && b.percent < 20);
   $('batBolt').hidden = !b.charging;
-  $('batText').textContent = has ? `${b.percent}%` : '--';
+  $('batText').textContent = has ? `${b.percent}%` : '';
   $('battery').setAttribute('aria-label', has ? `Battery ${b.percent}%${b.charging ? ', charging' : ''}` : 'Battery unknown');
 
   $('recClock').textContent = elapsed();
@@ -184,7 +187,9 @@ function onEvent(e) {
       if (params.get('demo') === '1' && !onEvent.demoed) { onEvent.demoed = true; demo('chat'); }
       return;
     case 'wake':
+      pending.clear();
       open.clear();
+      chat.replaceChildren();
       add(el('div', 'sep', `— Hey Jarvis · ${clock()} —`));
       return;
     case 'user_partial':
@@ -274,7 +279,6 @@ async function post(url, body) {
 
 function demo(scenario) { post('/api/demo', {scenario}); }
 
-$('mic').addEventListener('click', () => post('/api/action', {action: 'mic'}));
 addEventListener('keydown', (e) => {
   const scenario = {1: 'chat', 2: 'recording', 3: 'offline', 4: 'interrupt'}[e.key];
   if (scenario) demo(scenario);

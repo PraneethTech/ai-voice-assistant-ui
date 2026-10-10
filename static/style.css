@@ -3,7 +3,6 @@
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;overflow:hidden;background:#0b0b0d}
 body{display:grid;place-items:center;font:11px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--text);-webkit-font-smoothing:antialiased}
-button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
 
 /* Device frame around the 240x320 screen (removed with ?kiosk=1). app.js scales it to fit. */
@@ -27,8 +26,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .wifi path{fill:var(--green);stroke:var(--green);stroke-width:1.2;stroke-linejoin:round}
 .wifi.no-internet path{fill:var(--amber);stroke:var(--amber)}
 .wifi.off path{fill:none;stroke:var(--dim)}
-.mic{width:22px;height:22px;margin:0 -4px;display:grid;place-items:center;border-radius:4px}
-.mic:focus-visible{outline:1px solid var(--cyan)}
+.mic{width:14px;height:18px;display:grid;place-items:center}
 .mic .ic{width:11px;height:13px}
 .mic-body{fill:var(--green)}.mic-arc{fill:none;stroke:var(--green);stroke-width:1.3;stroke-linecap:round}.mic-slash{stroke:none}
 .mic.muted .mic-body{fill:var(--red)}.mic.muted .mic-arc{stroke:var(--red)}.mic.muted .mic-slash{stroke:var(--text);stroke-width:1.5;stroke-linecap:round}
@@ -40,6 +38,10 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .cell b{position:absolute;inset:-2px 0 0;font-size:7px;line-height:9px;text-align:center;color:#fff}
 
 /* Chat view */
+.voiceview{display:none;flex:1;min-height:0;flex-direction:column;align-items:center;justify-content:center;gap:5px;text-align:center;color:var(--c)}
+.voiceview strong{font-size:15px;font-weight:600}.voiceview span:last-child{font-size:10px;color:var(--muted)}
+.voice-orb{width:42px;height:42px;margin-bottom:5px;border:2px solid var(--c);border-radius:50%;box-shadow:0 0 14px var(--c);transition:border-color .2s,box-shadow .2s}
+.screen.voice-on .voiceview{display:flex}.screen.voice-on .chat{display:none}
 .chat{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:6px;display:flex;flex-direction:column;gap:5px;scrollbar-width:none}
 .chat::-webkit-scrollbar{display:none}
 .chat>*{flex-shrink:0}
@@ -66,7 +68,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 /* Recording view (matches the device mock: big waveform + transcript card) */
 .recview{display:none;flex:1;min-height:0;flex-direction:column;align-items:center;padding:14px 10px 10px}
 .screen.rec-on .recview{display:flex}
-.screen.rec-on .chat,.screen.rec-on .loader{display:none}
+.screen.rec-on .chat,.screen.rec-on .voiceview,.screen.rec-on .loader{display:none}
 .wave{height:56px;display:flex;align-items:center;gap:3px}
 .wave i{width:3px;height:var(--h,20px);border-radius:2px;background:var(--cyan);box-shadow:0 0 6px #22d3ee66;transform:scaleY(.35);animation:wave .7s ease-in-out infinite alternate}
 .screen[data-s=muted] .wave i{background:var(--dim);box-shadow:none;animation:none}

@@ -24,8 +24,9 @@ Run as your desktop user, not with sudo, so `wpctl` reaches your PipeWire sessio
 
 - Header: state on the left (Ready / Listening / ● REC 00:42 / Thinking / Using tool / Responding / Muted).
   The right side has Wi-Fi (filled green = connected, amber = connected without internet, empty outline = off),
-  mic (green, or red with a slash when muted), and battery percentage.
-- Body, wake-word conversation: full-height chat. Under each reply:
+  a read-only mic status icon (green, or red with a slash when muted), and battery percentage. The physical
+  GPIO button is the only mute control.
+- Body, idle: voice standby screen. A wake-word or local pipeline event opens the full-height chat. Under each reply:
   `TTFT · total · tok/s` and `in · out · avg ms/tok` (hover for the full names).
 - Body, recording mode: big waveform, timer and live transcript card. When recording stops, the
   transcript is kept in the chat as a REC bubble.
@@ -39,7 +40,7 @@ Run as your desktop user, not with sudo, so `wpctl` reaches your PipeWire sessio
 | USB mic (default source) | `wpctl set-mute @DEFAULT_AUDIO_SOURCE@` |
 | MAX98357A speaker | Not shown on screen. |
 | WS2812, board.D13 | One pixel, brightness 0.3, written only when the colour changes. |
-| Battery | Read from `/sys/class/power_supply/*` when a UPS HAT driver exposes one; otherwise shows `--`. A bare Pi 5 has no battery. |
+| Battery | Read from `/sys/class/power_supply/*` when a UPS HAT driver exposes one; otherwise shows `--`. The charge bolt appears only when the driver reports `Charging`. A bare Pi 5 has no battery. |
 
 One background thread polls Wi-Fi (3s), internet (5s), mic mute (2s) and battery (15s), and pushes
 only changes to the browser over Server-Sent Events. The browser does no polling.

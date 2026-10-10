@@ -15,14 +15,21 @@
         <span class="state" id="stateLabel" aria-live="polite">Ready</span>
         <div class="icons">
           <svg id="wifi" class="ic wifi off" viewBox="0 0 16 12" role="img" aria-label="Wi-Fi off"><path d="M8 11.2 1 4a10 10 0 0 1 14 0z"/></svg>
-          <button id="mic" class="mic" type="button" aria-label="Microphone on">
+          <span id="mic" class="mic" role="img" aria-label="Microphone on">
             <svg class="ic" viewBox="0 0 12 14" aria-hidden="true"><rect class="mic-body" x="3.5" y="1" width="5" height="8" rx="2.5"/><path class="mic-arc" d="M1.5 6.5a4.5 4.5 0 0 0 9 0M6 11v2"/><path class="mic-slash" d="M1 1l10 12"/></svg>
-          </button>
+          </span>
           <span class="battery" id="battery" role="img" aria-label="Battery unknown">
-            <span class="cell"><i id="batFill"></i><b id="batBolt" hidden>⚡</b></span><span id="batText">--</span>
+            <span class="cell"><i id="batFill"></i><b id="batBolt" hidden>⚡</b></span><span id="batText"></span>
           </span>
         </div>
       </header>
+
+      <!-- Default voice screen. The chat appears only after a wake-word event. -->
+      <section class="voiceview" id="voiceview" aria-label="Voice standby">
+        <span class="voice-orb" aria-hidden="true"></span>
+        <strong id="voiceTitle">Ready</strong>
+        <span id="voiceSub">Say “Hey Jarvis”</span>
+      </section>
 
       <!-- Conversation view (wake word) -->
       <section class="chat" id="chat" role="log" aria-live="polite" aria-label="Conversation">
