@@ -24,9 +24,9 @@ Run as your desktop user, not with sudo, so `wpctl` reaches your PipeWire sessio
 ## Screen
 
 - Header: state on the left (Ready / Listening / ● REC 00:42 / Thinking / Using tool / Responding / Muted).
-  The right side has Wi-Fi (filled green = connected, empty outline = off),
-  a read-only mic status icon (green, or red with a slash when muted), and battery percentage. The physical
-  GPIO button is the only mute control.
+  The right side has Wi-Fi (filled green = connected, empty outline = off) and
+  a read-only mic status icon (green, or red with a slash when muted). No battery widget:
+  the Pi is mains-powered. The physical GPIO button is the only mute control.
 - Body, idle: voice standby screen. A wake-word or local pipeline event opens the full-height chat. Under each reply:
   `TTFT · total · tok/s` and `in · out · avg ms/tok` (hover for the full names).
 - Body, recording mode: big waveform, timer and live transcript card. When recording stops, the
@@ -41,7 +41,7 @@ Run as your desktop user, not with sudo, so `wpctl` reaches your PipeWire sessio
 | USB mic (default source) | `wpctl set-mute @DEFAULT_AUDIO_SOURCE@` |
 | MAX98357A speaker | Not shown on screen. |
 | WS2812, board.D13 | One pixel, brightness 0.3, written only when the colour changes. |
-| Battery | Read from `/sys/class/power_supply/*` when a UPS HAT driver exposes one; otherwise shows `--`. The charge bolt appears only when the driver reports `Charging`. A bare Pi 5 has no battery. |
+| Battery | Probed from `/sys/class/power_supply/*` for logs/diagnostics only; not shown on screen (mains-powered Pi). |
 
 One background thread polls Wi-Fi (3s), internet (5s), mic mute (2s) and battery (15s), and pushes
 only changes to the browser over Server-Sent Events. The browser does no polling.
@@ -60,21 +60,30 @@ tail -n 200 logs/span.log
 Set `SPAN_LOG_FILE=/path/to/span.log` before starting the app to store it elsewhere. Log files are
 excluded from Git.
 
-LED priority (highest first):
+Light cases, exactly three (highest first):
 
 | Condition | Colour |
 |---|---|
-| Mic muted | red |
-| Thinking / using a tool (single working colour) | amber |
-| Listening / recording | cyan |
-| Responding or ready with mic on | green |
-| Ready with no internet or Wi-Fi | blue |
+| Mic muted (any mode) | red |
+| Listening / recording / thinking / using a tool / responding | amber |
+| Idle with mic on (unmuted) | green |
 | Explicit light-off event | off |
+
+Offline/online has no light colour — the Wi-Fi icon covers connectivity.
+After the 10s follow-up the screen returns to idle unmuted, so the light
+settles back to green.
 
 ## Pipeline integration
 
 Your wake word / VAD / STT / SLM / TTS code reports progress with `POST /api/event` (JSON), or, in the
 same process, `from app import publish; publish({...})`. The screen mode follows the events.
+
+How the light works: curl never sets the light. Each event goes through `publish()`,
+which sets the mode (`_set_mode`), then `update_led()` calls the `choose_led()` function
+(`app.py`): light off? -> off; mic muted? -> red; mode not idle? -> amber; else green.
+It writes the pixel (`board.D13`, only when the colour changes) and stores
+`STATE.led`. The `S=` check below only *reads* that result via `GET /api/state`;
+the browser LED bar reads the same field over SSE.
 
 ```bash
 E='curl -s -XPOST -H Content-Type:application/json localhost:5000/api/event -d'
@@ -106,31 +115,31 @@ after each step. Thinking and tool share one amber working colour.
 
 ## Check sequences (copy-paste)
 
-1. Thinking stays amber (one API), done -> listening cyan, 10s -> main green:
+1. Thinking stays amber (one API), done -> listening amber, 10s -> main green:
 ```bash
 E='curl -s -XPOST -H Content-Type:application/json localhost:5000/api/event -d'
 S='curl -s localhost:5000/api/state | python3 -c "import json,sys; s=json.load(sys.stdin); print(s[\"mode\"], s[\"led\"])"'
-$E '{"type":"wake"}' && $S                                                          # listening cyan, chat
+$E '{"type":"wake"}' && $S                                                          # listening amber, chat
 $E '{"type":"user_final","id":"u1","text":"What is the weather?"}' && $S            # thinking amber, stays
 $E '{"type":"tool","id":"t1","name":"get_weather","status":"start"}' && $S          # tool amber (same)
 $E '{"type":"tool","id":"t1","name":"get_weather","status":"ok","detail":"31C"}' && $S  # thinking amber
-$E '{"type":"assistant_done","id":"a1"}' && $S                                       # listening cyan
+$E '{"type":"assistant_done","id":"a1"}' && $S                                       # listening amber
 sleep 12 && $S                                                                      # idle green, main SPAN orb
 ```
 
 2. Recording (button only, online or offline), mute never exits it:
 ```bash
-$E '{"type":"recording","on":true}' && $S                                            # recording cyan, recview
+$E '{"type":"recording","on":true}' && $S                                            # recording amber, recview
 $E '{"type":"user_final","id":"r1","text":"Agenda for today"}' && $S                # stays recording
 $E '{"type":"recording","on":false}' && $S                                          # idle green, REC archived
 ```
 
-3. Offline tool error (Wi-Fi off or ISP down):
+3. Offline tool error (Wi-Fi off or ISP down, light unchanged):
 ```bash
 $E '{"type":"wake"}'
 $E '{"type":"user_final","id":"u2","text":"Latest news in USA?"}'
 $E '{"type":"tool","id":"t3","name":"web_search","status":"error","detail":"No internet connection"}' && $S  # thinking amber
-$E '{"type":"assistant_done","id":"a2"}' && $S                                       # listening cyan
+$E '{"type":"assistant_done","id":"a2"}' && $S                                       # listening amber
 sleep 12 && $S                                                                      # idle green
 ```
 
@@ -139,8 +148,8 @@ sleep 12 && $S                                                                  
 $E '{"type":"wake"}'
 $E '{"type":"user_final","id":"u3","text":"Tell me about the Pi 5"}'
 $E '{"type":"assistant_start","id":"a3"}'
-$E '{"type":"assistant_token","id":"a3","text":"It has "}' && $S                     # speaking green
-$E '{"type":"assistant_interrupted","id":"a3"}' && $S                               # listening cyan
+$E '{"type":"assistant_token","id":"a3","text":"It has "}' && $S                     # speaking amber
+$E '{"type":"assistant_interrupted","id":"a3"}' && $S                               # listening amber
 sleep 12 && $S                                                                      # idle green
 ```
 

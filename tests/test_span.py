@@ -3,10 +3,9 @@
 Run:  python -m pytest tests/ -v
 Covers user requirements:
 - Wi-Fi icon green-filled if up else outline, never amber/yellow, no Online/Offline/Ethernet words
-- Header only Wi-Fi + mic/mute + battery (+ state word for REC/Muted)
+- Header only Wi-Fi + mic/mute (+ state word for REC/Muted); no battery widget (mains Pi)
 - 240x320 screen preserved
-- LED colours: mic off red, mic on green, thinking/tool single amber,
-  listening/recording cyan, offline blue, light-off off
+- Light: muted red, any activity amber, idle green; off override
 - listening idle >10s returns to SPAN idle screen; recording stays
 - LLM metrics terminology (TTFT/total/TPOT/tok-s/in-out)
 - Fixed loaders per mode
@@ -111,9 +110,10 @@ def test_wifi_aria_label_is_two_way():
     assert "Wi-Fi connected" in js and "Wi-Fi off" in js
 
 
-def test_header_has_only_wifi_mic_battery():
+def test_header_has_only_wifi_and_mic():
     html = open(os.path.join(span.app.root_path, "templates", "index.html")).read().lower()
-    assert 'id="wifi"' in html and 'id="mic"' in html and 'id="battery"' in html
+    assert 'id="wifi"' in html and 'id="mic"' in html
+    assert 'id="battery"' not in html and 'id="battext"' not in html and 'batfill' not in html
     assert "ethernet" not in html and "speaker" not in html
     # state word must exist for REC/Muted/Thinking indication
     assert 'id="statelabel"' in html
@@ -122,6 +122,14 @@ def test_header_has_only_wifi_mic_battery():
 def test_screen_stays_240x320():
     css = open(os.path.join(span.app.root_path, "static", "style.css")).read()
     assert "width:240px" in css.replace(" ", "") and "height:320px" in css.replace(" ", "")
+
+
+def test_header_state_not_duplicated_as_heading():
+    # Same strings, different roles: header state is a micro status label,
+    # body keeps the hero title. Prevents "Ready" reading twice.
+    css = open(os.path.join(span.app.root_path, "static", "style.css")).read().replace(" ", "")
+    assert "text-transform:uppercase" in css
+    assert ".voiceviewstrong{font-size:17px" in css
 
 
 def test_light_theme_and_readability():
@@ -139,53 +147,39 @@ def test_readme_documents_green_only_wifi():
     assert "amber = connected without internet" not in md.lower()
 
 
-# ---------- 2. LED priority ----------
+# ---------- 2. Light: three cases only ----------
 
-def test_led_off_overrides_everything():
+def test_light_off_overrides_everything():
     assert span.choose_led(base_state(light_enabled=False, mic_muted=True,
                                       mode="thinking", internet=False)) == "off"
 
 
-def test_led_muted_red_second():
-    assert span.choose_led(base_state(mic_muted=True, mode="thinking", internet=False)) == "red"
-    assert span.choose_led(base_state(mic_muted=True, mode="tool")) == "red"
+def test_light_muted_is_red_in_every_mode():
+    for mode in ("idle", "listening", "recording", "thinking", "tool", "speaking"):
+        assert span.choose_led(base_state(mic_muted=True, mode=mode)) == "red", mode
 
 
-def test_led_thinking_amber():
-    assert span.choose_led(base_state(mode="thinking")) == "amber"
+def test_light_working_is_amber_regardless_of_connectivity():
+    for mode in ("listening", "recording", "thinking", "tool", "speaking"):
+        for wifi, net in ((True, True), (True, False), (False, False), (False, True)):
+            got = span.choose_led(base_state(mic_muted=False, mode=mode,
+                                             wifi=wifi, internet=net))
+            assert got == "amber", (mode, wifi, net)
 
 
-def test_led_tool_amber_single_working_colour():
-    assert span.choose_led(base_state(mode="tool")) == "amber"
-    assert span.choose_led(base_state(mode="thinking")) == "amber"
+def test_light_idle_is_green_regardless_of_connectivity():
+    # offline/online has no light colour; Wi-Fi icon covers connectivity
+    for wifi, net in ((True, True), (True, False), (False, False), (False, True)):
+        assert span.choose_led(base_state(mic_muted=False, mode="idle",
+                                          wifi=wifi, internet=net)) == "green"
 
 
-def test_led_listening_recording_cyan():
-    assert span.choose_led(base_state(mode="listening")) == "cyan"
-    assert span.choose_led(base_state(mode="recording")) == "cyan"
-
-
-def test_led_offline_blue_ignores_wifi():
-    # code checks internet only; wifi up + no internet still blue (LED), icon stays green
-    assert span.choose_led(base_state(mode="idle", wifi=True, internet=False)) == "blue"
-    assert span.choose_led(base_state(mode="idle", wifi=False, internet=False)) == "blue"
-    assert span.choose_led(base_state(mode="speaking", internet=False)) == "blue"
-
-
-def test_led_ready_speaking_green():
-    assert span.choose_led(base_state(mode="idle", internet=True)) == "green"
-    assert span.choose_led(base_state(mode="speaking", internet=True)) == "green"
-
-
-def test_led_color_table_matches_state():
-    for name, rgb in span.LED_COLORS.items():
-        assert len(rgb) == 3 and all(0 <= c <= 255 for c in rgb), name
+def test_light_color_values():
+    assert set(span.LED_COLORS) == {"red", "amber", "green", "off"}, \
+        "only three live colours plus off"
     assert span.LED_COLORS["red"] == (255, 0, 0)
     assert span.LED_COLORS["amber"] == (255, 140, 0)
     assert span.LED_COLORS["green"] == (34, 197, 94)
-    assert span.LED_COLORS["blue"] == (59, 130, 246)
-    assert span.LED_COLORS["cyan"] == (34, 211, 238)
-    assert span.LED_COLORS["purple"] == (150, 0, 255)
     assert span.LED_COLORS["off"] == (0, 0, 0)
 
 
@@ -193,36 +187,6 @@ def test_update_led_syncs_hex():
     set_state(mode="thinking", mic_muted=False, internet=True)
     assert span.STATE["led"]["name"] == "amber"
     assert span.STATE["led"]["hex"] == "#%02x%02x%02x" % span.LED_COLORS["amber"]
-
-
-LED_MATRIX = [
-    # (light, muted, mode, internet, expected_name, expected_hex)
-    (False, False, "idle", True, "off", "#000000"),
-    (False, True, "thinking", False, "off", "#000000"),
-    (True, True, "idle", True, "red", "#ff0000"),
-    (True, True, "thinking", False, "red", "#ff0000"),
-    (True, True, "tool", True, "red", "#ff0000"),
-    (True, False, "thinking", True, "amber", "#ff8c00"),
-    (True, False, "thinking", False, "amber", "#ff8c00"),
-    (True, False, "tool", True, "amber", "#ff8c00"),
-    (True, False, "tool", False, "amber", "#ff8c00"),
-    (True, False, "listening", True, "cyan", "#22d3ee"),
-    (True, False, "listening", False, "cyan", "#22d3ee"),
-    (True, False, "recording", True, "cyan", "#22d3ee"),
-    (True, False, "recording", False, "cyan", "#22d3ee"),
-    (True, False, "idle", False, "blue", "#3b82f6"),
-    (True, False, "speaking", False, "blue", "#3b82f6"),
-    (True, False, "idle", True, "green", "#22c55e"),
-    (True, False, "speaking", True, "green", "#22c55e"),
-]
-
-
-@pytest.mark.parametrize("light,muted,mode,net,exp,hexv", LED_MATRIX)
-def test_led_full_matrix(light, muted, mode, net, exp, hexv):
-    got = span.choose_led(base_state(light_enabled=light, mic_muted=muted,
-                                     mode=mode, internet=net))
-    assert got == exp, (light, muted, mode, net)
-    assert ("#%02x%02x%02x" % span.LED_COLORS[got]) == hexv
 
 
 def test_tool_error_returns_thinking_via_api(client):
@@ -401,8 +365,8 @@ def test_post_event_wake_and_validation(client):
 
 
 def test_thinking_done_idle_light_flow_via_api(client):
-    # 1 API -> thinking, stays: check amber. done API -> listening: check cyan.
-    # 10s idle -> main: check green.
+    # 1 API -> thinking, stays: check amber. done API -> listening: check amber.
+    # 10s idle -> main unmuted: check green.
     set_state(mode="idle", wifi=True, internet=True,
               mic_muted=False, light_enabled=True)
     r = client.post("/api/event",
@@ -420,8 +384,8 @@ def test_thinking_done_idle_light_flow_via_api(client):
     assert r.status_code == 200
     st = client.get("/api/state").get_json()
     assert st["mode"] == "listening", st
-    assert st["led"]["name"] == "cyan", st["led"]
-    assert st["led"]["hex"] == "#%02x%02x%02x" % span.LED_COLORS["cyan"]
+    assert st["led"]["name"] == "amber", st["led"]
+    assert st["led"]["hex"] == "#%02x%02x%02x" % span.LED_COLORS["amber"]
 
     # 10s without events -> main screen
     with span.LOCK:
@@ -512,11 +476,14 @@ def test_fixed_loader_selectors_exist():
     assert "wave" in css and "recClock" in js
 
 
-def test_battery_unknown_shows_dashes():
+def test_battery_absent_from_header_but_present_in_api(client):
     js = open(os.path.join(span.app.root_path, "static", "app.js")).read()
-    assert ": '--'" in js or ':"--"' in js or "`--`" in js or "'--'" in js, \
-        "mains-powered Pi (no /sys/class/power_supply) must show --, not blank"
-    assert "mains powered" in js.lower()
+    html = open(os.path.join(span.app.root_path, "templates", "index.html")).read()
+    assert "batText" not in js and "batFill" not in js, "no battery widget in UI (mains Pi)"
+    assert "battery" not in html.lower().split("<header")[1].split("</header>")[0], \
+        "no battery in header"
+    # backend still probes + exposes it for logs/diagnostics
+    assert "battery" in client.get("/api/state").get_json()
 
 
 def test_recording_never_falls_back_to_span_or_voice():

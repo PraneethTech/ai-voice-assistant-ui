@@ -99,14 +99,6 @@ function render() {
   $('mic').classList.toggle('muted', S.mic_muted);
   $('mic').setAttribute('aria-label', S.mic_muted ? 'Microphone muted' : 'Microphone on');
 
-  const b = S.battery || {};
-  const has = b.percent != null;
-  $('batFill').style.width = has ? `${b.percent}%` : '0';
-  $('batFill').classList.toggle('low', has && b.percent < 20);
-  $('batBolt').hidden = !b.charging;
-  $('batText').textContent = has ? `${b.percent}%` : '--';
-  $('battery').setAttribute('aria-label', has ? `Battery ${b.percent}%${b.charging ? ', charging' : ''}` : 'Battery unknown, mains powered');
-
   $('recClock').textContent = elapsed();
   if (recording && !recTimer) recTimer = setInterval(render, 1000);
   if (!recording && recTimer) { clearInterval(recTimer); recTimer = null; }
