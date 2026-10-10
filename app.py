@@ -155,9 +155,6 @@ _last_wifi_result = None
 
 
 def read_wifi():
-
-
-def read_wifi():
     # Prefer NetworkManager when present; fall back to kernel interface state
     # so Raspberry Pi OS installs without NetworkManager still report Wi-Fi.
     # Probe detail is logged on every transition, so /api/log shows exactly
