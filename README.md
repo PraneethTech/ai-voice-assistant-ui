@@ -23,7 +23,7 @@ Run as your desktop user, not with sudo, so `wpctl` reaches your PipeWire sessio
 ## Screen
 
 - Header: state on the left (Ready / Listening / ● REC 00:42 / Thinking / Using tool / Responding / Muted).
-  The right side has Wi-Fi (filled green = connected, amber = connected without internet, empty outline = off),
+  The right side has Wi-Fi (filled green = connected, empty outline = off),
   a read-only mic status icon (green, or red with a slash when muted), and battery percentage. The physical
   GPIO button is the only mute control.
 - Body, idle: voice standby screen. A wake-word or local pipeline event opens the full-height chat. Under each reply:
@@ -64,8 +64,7 @@ LED priority (highest first):
 | Condition | Colour |
 |---|---|
 | Mic muted | red |
-| Thinking | amber |
-| Using a tool | purple |
+| Thinking / using a tool (single working colour) | amber |
 | Listening / recording | cyan |
 | Responding or ready with mic on | green |
 | Ready with no internet or Wi-Fi | blue |
@@ -100,6 +99,57 @@ without another pipeline event it returns to the ready screen; configure this wi
 `FOLLOW_UP_TIMEOUT_SECONDS`. Pass `"next_mode":"idle"` to return immediately.
 While recording, `user_partial` / `user_final` go to the recording card instead of the chat.
 Ids only need to be unique among bubbles still in progress, so reusing `u1`/`a1` every turn is fine.
+
+Check with `S='curl -s localhost:5000/api/state | python3 -c "import json,sys; s=json.load(sys.stdin); print(s[\"mode\"], s[\"led\"])"'`
+after each step. Thinking and tool share one amber working colour.
+
+## Check sequences (copy-paste)
+
+1. Thinking stays amber (one API), done -> listening cyan, 10s -> main green:
+```bash
+E='curl -s -XPOST -H Content-Type:application/json localhost:5000/api/event -d'
+S='curl -s localhost:5000/api/state | python3 -c "import json,sys; s=json.load(sys.stdin); print(s[\"mode\"], s[\"led\"])"'
+$E '{"type":"wake"}' && $S                                                          # listening cyan, chat
+$E '{"type":"user_final","id":"u1","text":"What is the weather?"}' && $S            # thinking amber, stays
+$E '{"type":"tool","id":"t1","name":"get_weather","status":"start"}' && $S          # tool amber (same)
+$E '{"type":"tool","id":"t1","name":"get_weather","status":"ok","detail":"31C"}' && $S  # thinking amber
+$E '{"type":"assistant_done","id":"a1"}' && $S                                       # listening cyan
+sleep 12 && $S                                                                      # idle green, main SPAN orb
+```
+
+2. Recording (button only, online or offline), mute never exits it:
+```bash
+$E '{"type":"recording","on":true}' && $S                                            # recording cyan, recview
+$E '{"type":"user_final","id":"r1","text":"Agenda for today"}' && $S                # stays recording
+$E '{"type":"recording","on":false}' && $S                                          # idle green, REC archived
+```
+
+3. Offline tool error (Wi-Fi off or ISP down):
+```bash
+$E '{"type":"wake"}'
+$E '{"type":"user_final","id":"u2","text":"Latest news in USA?"}'
+$E '{"type":"tool","id":"t3","name":"web_search","status":"error","detail":"No internet connection"}' && $S  # thinking amber
+$E '{"type":"assistant_done","id":"a2"}' && $S                                       # listening cyan
+sleep 12 && $S                                                                      # idle green
+```
+
+4. Interrupt / follow-up:
+```bash
+$E '{"type":"wake"}'
+$E '{"type":"user_final","id":"u3","text":"Tell me about the Pi 5"}'
+$E '{"type":"assistant_start","id":"a3"}'
+$E '{"type":"assistant_token","id":"a3","text":"It has "}' && $S                     # speaking green
+$E '{"type":"assistant_interrupted","id":"a3"}' && $S                               # listening cyan
+sleep 12 && $S                                                                      # idle green
+```
+
+5. Light + stuck recovery (thinking with no done falls back after 10s):
+```bash
+$E '{"type":"light","on":false}' && $S                                               # led off
+$E '{"type":"light","on":true}' && $S                                                # restored colour
+$E '{"type":"user_final","id":"u9","text":"stuck?"}' && $S                           # thinking amber
+sleep 12 && $S                                                                      # idle green, never stuck in chat
+```
 
 Metric names: TTFT = time to first token; total = end-to-end latency (request → last token);
 gen = decode time (first → last token); TPOT ("avg") = average time per output token;

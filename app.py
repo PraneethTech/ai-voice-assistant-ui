@@ -48,7 +48,8 @@ LOG = configure_logger()
 # Momentary push button on GPIO 5 toggles microphone mute on each press.
 MIC = "@DEFAULT_AUDIO_SOURCE@"
 # Listening automatically returns to the ready screen after this quiet period.
-# Recording stays active until the pipeline explicitly stops it.
+# Thinking / tool / speaking from a stalled pipeline also fall back so the
+# chat never sticks. Recording stays active until the pipeline explicitly stops it.
 FOLLOW_UP_TIMEOUT_SECONDS = max(1, int(os.environ.get("FOLLOW_UP_TIMEOUT_SECONDS", "10")))
 
 # Single WS2812 pixel. Priority is top to bottom in choose_led().
@@ -210,14 +211,13 @@ def read_battery():
 
 
 def choose_led(s):
+    # thinking + tool share one amber: single "working" colour, less UX confusion.
     if not s["light_enabled"]:
         name = "off"
     elif s["mic_muted"]:
         name = "red"
-    elif s["mode"] == "thinking":
+    elif s["mode"] in ("thinking", "tool"):
         name = "amber"
-    elif s["mode"] == "tool":
-        name = "purple"
     elif s["mode"] in ("listening", "recording"):
         name = "cyan"
     elif not s["internet"]:
@@ -321,7 +321,7 @@ def monitor():
             changed = any(STATE[k] != v for k, v in changes.items())
             STATE.update(changes)
             follow_up_expired = (
-                STATE["mode"] == "listening"
+                STATE["mode"] in ("listening", "thinking", "tool", "speaking")
                 and time.monotonic() - STATE["last_activity_at"] >= FOLLOW_UP_TIMEOUT_SECONDS
             )
             if follow_up_expired:

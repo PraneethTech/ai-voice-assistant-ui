@@ -16,7 +16,7 @@ body{display:grid;place-items:center;font:11px/1.4 system-ui,-apple-system,"Sego
 
 .screen{width:240px;height:320px;background:var(--bg);border-radius:10px;overflow:hidden;display:flex;flex-direction:column}
 .screen[data-s=idle]{--c:var(--green)}.screen[data-s=listening]{--c:var(--cyan)}.screen[data-s=recording]{--c:var(--cyan)}.screen[data-s=thinking]{--c:var(--amber)}
-.screen[data-s=tool]{--c:var(--purple)}.screen[data-s=speaking]{--c:var(--green)}.screen[data-s=muted]{--c:var(--red)}
+.screen[data-s=tool]{--c:var(--amber)}.screen[data-s=speaking]{--c:var(--green)}.screen[data-s=muted]{--c:var(--red)}
 
 /* Header: state word left, icons right */
 .status{height:22px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 8px;border-bottom:1px solid var(--line)}
@@ -24,7 +24,6 @@ body{display:grid;place-items:center;font:11px/1.4 system-ui,-apple-system,"Sego
 .icons{display:flex;align-items:center;gap:6px}
 .ic{width:13px;height:11px;display:block}
 .wifi path{fill:var(--green);stroke:var(--green);stroke-width:1.2;stroke-linejoin:round}
-.wifi.no-internet path{fill:var(--amber);stroke:var(--amber)}
 .wifi.off path{fill:none;stroke:var(--dim)}
 .mic{width:14px;height:18px;display:grid;place-items:center}
 .mic .ic{width:11px;height:13px}

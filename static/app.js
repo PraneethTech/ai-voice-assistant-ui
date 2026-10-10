@@ -88,15 +88,14 @@ function render() {
     : mode === 'tool' ? `Using ${toolName || 'tool'}…` : LOADER[mode] || '');
   $('loaderText').textContent = loader;
   const sub = $('emptySub');
-  if (sub) sub.textContent = S.mic_muted ? 'Mic muted' : S.internet ? 'Online' : 'Offline mode';
+  if (sub) sub.textContent = S.mic_muted ? 'Mic muted' : 'Ready';
   $('voiceTitle').textContent = S.mic_muted ? 'Microphone muted' : 'Ready';
   $('voiceSub').textContent = S.mic_muted ? 'Use the device button' : 'Say “Hey Jarvis”';
 
   root.style.setProperty('--led', S.led.hex);
   const wifi = $('wifi');
   wifi.classList.toggle('off', !S.wifi);
-  wifi.classList.toggle('no-internet', S.wifi && !S.internet);
-  wifi.setAttribute('aria-label', S.wifi ? (S.internet ? 'Wi-Fi connected' : 'Wi-Fi connected, no internet') : 'Wi-Fi off');
+  wifi.setAttribute('aria-label', S.wifi ? 'Wi-Fi connected' : 'Wi-Fi off');
   $('mic').classList.toggle('muted', S.mic_muted);
   $('mic').setAttribute('aria-label', S.mic_muted ? 'Microphone muted' : 'Microphone on');
 
@@ -105,8 +104,8 @@ function render() {
   $('batFill').style.width = has ? `${b.percent}%` : '0';
   $('batFill').classList.toggle('low', has && b.percent < 20);
   $('batBolt').hidden = !b.charging;
-  $('batText').textContent = has ? `${b.percent}%` : '';
-  $('battery').setAttribute('aria-label', has ? `Battery ${b.percent}%${b.charging ? ', charging' : ''}` : 'Battery unknown');
+  $('batText').textContent = has ? `${b.percent}%` : '--';
+  $('battery').setAttribute('aria-label', has ? `Battery ${b.percent}%${b.charging ? ', charging' : ''}` : 'Battery unknown, mains powered');
 
   $('recClock').textContent = elapsed();
   if (recording && !recTimer) recTimer = setInterval(render, 1000);
