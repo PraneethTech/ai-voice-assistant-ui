@@ -1,4 +1,5 @@
 'use strict';
+console.log('SPAN build v5');
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const root = document.documentElement;

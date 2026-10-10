@@ -203,6 +203,15 @@ def test_static_urls_versioned():
         "versioned static URLs force fresh fetch after deploys"
 
 
+def test_build_stamp_visible():
+    # Fingerprints a running screen: tab title + console stamp must match,
+    # so stale-tab vs stale-server is answered in seconds, not hours.
+    html = open(os.path.join(span.app.root_path, "templates", "index.html")).read()
+    js = open(os.path.join(span.app.root_path, "static", "app.js")).read()
+    assert "<title>SPAN v5</title>" in html
+    assert "console.log('SPAN build v5')" in js
+
+
 def test_mute_switch_verifies_hardware(monkeypatch):
     calls = []
     monkeypatch.setattr(span, "set_mic_muted", lambda m: calls.append(m))
