@@ -521,6 +521,21 @@ def test_read_internet_true_false(monkeypatch):
     assert span.read_internet() is False
 
 
+def test_wifi_iface_up_matrix():
+    assert span._wifi_iface_up("up", "") is True
+    assert span._wifi_iface_up("up", "0") is True
+    for state in ("dormant", "unknown", "testing"):
+        assert span._wifi_iface_up(state, "1") is True, state
+        assert span._wifi_iface_up(state, "0") is False, state
+        assert span._wifi_iface_up(state, "") is False, state
+    for state in ("down", "notpresent", "lowerlayerdown", ""):
+        assert span._wifi_iface_up(state, "1") is False, state
+
+
+def test_read_wifi_returns_bool():
+    assert isinstance(span.read_wifi(), bool)
+
+
 def test_metrics_keys_documented(client):
     # README documents the exact metrics dict the pipeline sends with assistant_done,
     # and the API accepts it end to end.

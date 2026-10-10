@@ -141,31 +141,78 @@ def set_mic_muted(mute):
 
 
 def read_wifi():
+def _wifi_iface_up(operstate, carrier):
+    """Kernel interface state counts as Wi-Fi up. operstate alone is unreliable
+    for wireless (hotspot links often report dormant/unknown), so a live
+    carrier confirms the association."""
+    operstate = (operstate or "").strip()
+    carrier = (carrier or "").strip()
+    if operstate == "up":
+        return True
+    return operstate in ("dormant", "unknown", "testing") and carrier == "1"
+
+
+_last_wifi_result = None
+
+
+def read_wifi():
     # Prefer NetworkManager when present; fall back to kernel interface state
     # so Raspberry Pi OS installs without NetworkManager still report Wi-Fi.
+    # Probe detail is logged on every transition, so /api/log shows exactly
+    # why the icon reads on or off (nmcli rows, operstate/carrier, iw link).
+    global _last_wifi_result
+    notes = []
+    result = False
     if shutil.which("nmcli"):
         try:
             out = run_cmd(["nmcli", "-t", "-f", "TYPE,STATE", "device", "status"]).stdout
+            notes.append("nmcli=" + "|".join(out.splitlines()))
             if any(line == "wifi:connected" for line in out.splitlines()):
-                return True
-        except Exception:
-            pass
-    for path in glob.glob("/sys/class/net/*"):
+                result = True
+        except Exception as exc:
+            notes.append(f"nmcli=error({exc})")
+    for path in sorted(glob.glob("/sys/class/net/*")):
         name = os.path.basename(path)
         if not os.path.exists(os.path.join(path, "wireless")):
             continue
         try:
             with open(os.path.join(path, "operstate")) as f:
-                if f.read().strip() == "up":
-                    return True
+                operstate = f.read().strip()
+            carrier = ""
+            try:
+                with open(os.path.join(path, "carrier")) as f:
+                    carrier = f.read().strip()
+            except OSError:
+                pass
+            notes.append(f"{name}:{operstate}/carrier={carrier}")
+            if _wifi_iface_up(operstate, carrier):
+                result = True
         except OSError:
             continue
-    if shutil.which("iwgetid"):
+    if not result and shutil.which("iw"):
+        for path in sorted(glob.glob("/sys/class/net/*")):
+            name = os.path.basename(path)
+            if not os.path.exists(os.path.join(path, "wireless")):
+                continue
+            try:
+                linked = "Connected to " in run_cmd(["iw", "dev", name, "link"]).stdout
+                notes.append(f"iw-{name}={'linked' if linked else 'down'}")
+                if linked:
+                    result = True
+                    break
+            except Exception:
+                continue
+    if not result and shutil.which("iwgetid"):
         try:
-            return bool(run_cmd(["iwgetid", "-r"]).stdout.strip())
+            has = bool(run_cmd(["iwgetid", "-r"]).stdout.strip())
+            notes.append(f"iwgetid={'up' if has else 'down'}")
+            result = has
         except Exception:
             pass
-    return False
+    if result != _last_wifi_result:
+        LOG.info("wifi_probe result=%s %s", result, " ".join(notes) or "no-data")
+        _last_wifi_result = result
+    return result
 
 
 def read_internet():
