@@ -68,7 +68,7 @@ function item(id, cls) {
 
 // ---------- state rendering ----------
 const LABEL = {idle: 'Ready', listening: 'Listening', thinking: 'Thinking', tool: 'Using tool', speaking: 'Responding'};
-const LOADER = {idle: 'Say “Hey Jarvis”', listening: 'Listening…', thinking: 'Thinking…', speaking: 'Responding…'};
+const LOADER = {idle: 'Waiting for wake word', listening: 'Listening…', thinking: 'Thinking…', speaking: 'Responding…'};
 
 function render() {
   if (!S) return;

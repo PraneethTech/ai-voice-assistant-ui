@@ -13,6 +13,7 @@
     <main class="screen" id="screen" data-s="idle" aria-label="SPAN screen">
       <header class="status">
         <span class="state" id="stateLabel" aria-live="polite">Ready</span>
+        <span class="brand-top" aria-hidden="true">SPAN</span>
         <div class="icons">
           <svg id="wifi" class="ic wifi off" viewBox="0 0 16 12" role="img" aria-label="Wi-Fi off"><path d="M8 11.2 1 4a10 10 0 0 1 14 0z"/></svg>
           <span id="mic" class="mic" role="img" aria-label="Microphone on">
@@ -33,7 +34,6 @@
         <div class="empty" id="empty">
           <span class="ring" aria-hidden="true"></span>
           <strong class="brand">SPAN</strong>
-          <span class="say">Say “Hey Jarvis”</span>
           <small id="emptySub">Ready</small>
         </div>
       </section>
@@ -55,7 +55,7 @@
             <svg viewBox="0 0 12 14"><rect x="3.5" y="1" width="5" height="8" rx="2.5"/><path d="M1.5 6.5a4.5 4.5 0 0 0 9 0M6 11v2M1 1l10 12"/></svg>
           </span>
         </span>
-        <span id="loaderText">Say “Hey Jarvis”</span>
+        <span id="loaderText">Waiting for wake word</span>
       </footer>
     </main>
     <div class="grille" aria-hidden="true"></div>

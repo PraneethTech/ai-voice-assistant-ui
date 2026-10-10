@@ -132,6 +132,22 @@ def test_header_state_not_duplicated_as_heading():
     assert ".voiceviewstrong{font-size:17px" in css
 
 
+def test_span_wordmark_fixed_in_header_all_screens():
+    html = open(os.path.join(span.app.root_path, "templates", "index.html")).read()
+    assert 'class="brand-top"' in html and ">SPAN<" in html
+    css = open(os.path.join(span.app.root_path, "static", "style.css")).read().replace(" ", "")
+    assert ".brand-top{position:absolute;left:50%" in css
+
+
+def test_no_repeated_prompts_across_views():
+    html = open(os.path.join(span.app.root_path, "templates", "index.html")).read()
+    js = open(os.path.join(span.app.root_path, "static", "app.js")).read()
+    # "Say Hey Jarvis" lives only on the standby screen, not in chat empty or loader
+    assert 'class="say"' not in html
+    assert "Waiting for wake word" in js
+    assert js.count("Say “Hey Jarvis”") == 1, "prompt must appear once (voiceSub only)"
+
+
 def test_light_theme_and_readability():
     css = open(os.path.join(span.app.root_path, "static", "style.css")).read()
     assert "color-scheme:light" in css.replace(" ", "")

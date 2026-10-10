@@ -19,8 +19,9 @@ body{display:grid;place-items:center;font:12px/1.45 system-ui,-apple-system,"Seg
 .screen[data-s=tool]{--c:var(--amber)}.screen[data-s=speaking]{--c:var(--amber)}.screen[data-s=muted]{--c:var(--red)}
 
 /* Header: state word left, icons right */
-.status{height:24px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 8px;border-bottom:1px solid var(--line)}
+.status{height:24px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 8px;border-bottom:1px solid var(--line);position:relative}
 .state{font-size:10px;font-weight:700;color:var(--c);font-variant-numeric:tabular-nums;white-space:nowrap;text-transform:uppercase;letter-spacing:.8px;opacity:.9}
+.brand-top{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:8px;font-weight:700;letter-spacing:2.5px;color:var(--dim);pointer-events:none}
 .icons{display:flex;align-items:center;gap:6px}
 .ic{width:13px;height:11px;display:block}
 .wifi path{fill:var(--green);stroke:var(--green);stroke-width:1.2;stroke-linejoin:round}
@@ -54,7 +55,6 @@ body{display:grid;place-items:center;font:12px/1.45 system-ui,-apple-system,"Seg
 .err{align-self:center;font-size:8.5px;color:var(--red)}
 .empty{margin:auto;display:flex;flex-direction:column;align-items:center;gap:3px;text-align:center}
 .empty .brand{font-size:16px;letter-spacing:3px;margin-top:6px}
-.empty .say{font-size:11px}
 .empty small{font-size:9px;color:var(--muted)}
 .ring{width:30px;height:30px;border-radius:50%;border:2px solid var(--c);box-shadow:0 0 10px var(--c);transition:border-color .2s,box-shadow .2s}
 

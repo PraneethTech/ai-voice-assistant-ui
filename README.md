@@ -23,7 +23,8 @@ Run as your desktop user, not with sudo, so `wpctl` reaches your PipeWire sessio
 
 ## Screen
 
-- Header: state on the left (Ready / Listening / ● REC 00:42 / Thinking / Using tool / Responding / Muted).
+- Header: state micro-label on the left (Ready / Listening / ● REC 00:42 / Thinking / Using tool / Responding / Muted),
+  SPAN wordmark centred (same spot on every screen), Wi-Fi + mic icons right.
   The right side has Wi-Fi (filled green = connected, empty outline = off) and
   a read-only mic status icon (green, or red with a slash when muted). No battery widget:
   the Pi is mains-powered. The physical GPIO button is the only mute control.
@@ -32,6 +33,7 @@ Run as your desktop user, not with sudo, so `wpctl` reaches your PipeWire sessio
 - Body, recording mode: big waveform, timer and live transcript card. When recording stops, the
   transcript is kept in the chat as a REC bubble.
 - Fixed loader row at the bottom: waveform (listening / responding), dots (thinking / tool), mic-off (muted).
+  Idle shows `Waiting for wake word`; the `Say “Hey Jarvis”` prompt lives only on the standby screen.
 
 ## Hardware
 
