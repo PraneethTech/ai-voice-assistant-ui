@@ -243,6 +243,10 @@ def test_light_theme_and_readability():
     assert "--text:#101828" in css.replace(" ", "")
     assert "#070b16" not in css and "#edf5ff" not in css, "no dark-theme leftovers"
     assert "font-size:12px" in css.replace(" ", ""), "chat text must be 12px for readability"
+    lowered = css.lower()
+    for banned in ("cyan", "purple", "#4da3ff", "#22d3ee", "#b794f4", "#7c3aed"):
+        assert banned not in lowered, f"fourth colour {banned} must not exist: three only"
+    assert "blue" not in lowered, "no blue anywhere in the UI"
 
 
 def test_readme_documents_green_only_wifi():
