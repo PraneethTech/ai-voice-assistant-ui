@@ -124,6 +124,15 @@ def test_screen_stays_240x320():
     assert "width:240px" in css.replace(" ", "") and "height:320px" in css.replace(" ", "")
 
 
+def test_light_theme_and_readability():
+    css = open(os.path.join(span.app.root_path, "static", "style.css")).read()
+    assert "color-scheme:light" in css.replace(" ", "")
+    assert "--bg:#f4f6fa" in css.replace(" ", "")
+    assert "--text:#101828" in css.replace(" ", "")
+    assert "#070b16" not in css and "#edf5ff" not in css, "no dark-theme leftovers"
+    assert "font-size:12px" in css.replace(" ", ""), "chat text must be 12px for readability"
+
+
 def test_readme_documents_green_only_wifi():
     md = open(os.path.join(span.app.root_path, "..", "pocket_ai_hardware_web", "README.md")).read() \
         if False else open(os.path.join("README.md")).read()
