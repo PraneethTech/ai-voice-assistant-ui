@@ -125,7 +125,8 @@ def test_static_files_revalidated():
 
 def test_wifi_off_outline_visible():
     css = open(os.path.join(span.app.root_path, "static", "style.css")).read()
-    assert ".wifi.off" in css and "#667085" in css, "off outline must be visible on light bg"
+    assert ".wifi.off" in css and "#475569" in css, "off outline must be visible on light bg"
+    assert "stroke-width:2" in css.replace(" ", ""), "hollow off-state needs a thick stroke"
 
 
 def test_log_endpoint(client):

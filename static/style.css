@@ -25,7 +25,7 @@ body{display:grid;place-items:center;font:12px/1.45 system-ui,-apple-system,"Seg
 .icons{display:flex;align-items:center;gap:6px}
 .ic{width:13px;height:11px;display:block}
 .wifi path{fill:var(--green);stroke:var(--green);stroke-width:1.2;stroke-linejoin:round}
-.wifi.off path{fill:none;stroke:#667085}
+.wifi.off path{fill:none;stroke:#475569;stroke-width:2}
 .mic{width:14px;height:18px;display:grid;place-items:center}
 .mic .ic{width:11px;height:13px}
 .mic-body{fill:var(--green)}.mic-arc{fill:none;stroke:var(--green);stroke-width:1.3;stroke-linecap:round}.mic-slash{stroke:none}
