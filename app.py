@@ -52,11 +52,11 @@ MIC = "@DEFAULT_AUDIO_SOURCE@"
 # chat never sticks. Recording stays active until the pipeline explicitly stops it.
 FOLLOW_UP_TIMEOUT_SECONDS = max(1, int(os.environ.get("FOLLOW_UP_TIMEOUT_SECONDS", "10")))
 
-# Single WS2812 pixel. Exactly three live cases: muted red, any activity amber,
+# Single WS2812 pixel. Exactly three live cases: muted red, any activity orange,
 # idle green. Connectivity is shown only by the Wi-Fi icon, never the light.
 LED_COLORS = {
     "red": (255, 0, 0),        # mic muted
-    "amber": (255, 140, 0),    # listening / recording / thinking / tool / speaking
+    "orange": (255, 140, 0),    # listening / recording / thinking / tool / speaking
     "green": (34, 197, 94),    # idle with mic on
     "off": (0, 0, 0),          # explicit light-off test or hardware setting
 }
@@ -259,14 +259,14 @@ def read_battery():
 
 def choose_led(s):
     # Three cases only, top to bottom: light off, muted red,
-    # any non-idle mode amber, idle green. No cyan/green flicker,
+    # any non-idle mode orange, idle green. No cyan/green flicker,
     # no connectivity colour (Wi-Fi icon covers that).
     if not s["light_enabled"]:
         name = "off"
     elif s["mic_muted"]:
         name = "red"
     elif s["mode"] != "idle":
-        name = "amber"
+        name = "orange"
     else:
         name = "green"
     return name

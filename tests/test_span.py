@@ -2,10 +2,10 @@
 
 Run:  python -m pytest tests/ -v
 Covers user requirements:
-- Wi-Fi icon green-filled if up else outline, never amber/yellow, no Online/Offline/Ethernet words
+- Wi-Fi icon green-filled if up else outline, never orange/yellow, no Online/Offline/Ethernet words
 - Header only Wi-Fi + mic/mute (+ state word for REC/Muted); no battery widget (mains Pi)
 - 240x320 screen preserved
-- Light: muted red, any activity amber, idle green; off override
+- Light: muted red, any activity orange, idle green; off override
 - listening idle >10s returns to SPAN idle screen; recording stays
 - LLM metrics terminology (TTFT/total/TPOT/tok-s/in-out)
 - Fixed loaders per mode
@@ -74,20 +74,20 @@ def set_state(**over):
 
 # ---------- 1. Wi-Fi icon: never yellow, wifi-only ----------
 
-def test_wifi_css_has_no_amber_rule():
+def test_wifi_css_has_no_orange_rule():
     css = open(os.path.join(span.app.root_path, "static", "style.css")).read()
     assert ".wifi path" in css
     assert ".wifi.off path" in css
-    assert "no-internet" not in css, "amber .wifi.no-internet rule must not exist"
-    # wifi selectors must never reference amber/yellow
+    assert "no-internet" not in css, "orange .wifi.no-internet rule must not exist"
+    # wifi selectors must never reference orange/yellow
     for line in css.splitlines():
         if line.strip().startswith(".wifi"):
-            assert "amber" not in line.lower() and "yellow" not in line.lower(), line
+            assert "orange" not in line.lower() and "yellow" not in line.lower(), line
 
 
-def test_wifi_js_uses_wifi_only_no_amber():
+def test_wifi_js_uses_wifi_only_no_orange():
     js = open(os.path.join(span.app.root_path, "static", "app.js")).read()
-    assert "no-internet" not in js, "JS must not toggle no-internet/amber class"
+    assert "no-internet" not in js, "JS must not toggle no-internet/orange class"
     assert "wifi.classList.toggle('off', !S.wifi)" in js or 'wifi.classList.toggle("off", !S.wifi)' in js \
         or "toggle('off', !S.wifi)" in js
     assert "S.wifi && !S.internet" not in js, "wifi colour must not depend on internet"
@@ -208,8 +208,8 @@ def test_build_stamp_visible():
     # so stale-tab vs stale-server is answered in seconds, not hours.
     html = open(os.path.join(span.app.root_path, "templates", "index.html")).read()
     js = open(os.path.join(span.app.root_path, "static", "app.js")).read()
-    assert "<title>SPAN v5</title>" in html
-    assert "console.log('SPAN build v5')" in js
+    assert "<title>SPAN v6</title>" in html
+    assert "console.log('SPAN build v6')" in js
 
 
 def test_readme_matches_shipped_version():
@@ -262,7 +262,7 @@ def test_light_theme_and_readability():
 def test_readme_documents_green_only_wifi():
     md = open(os.path.join(span.app.root_path, "..", "pocket_ai_hardware_web", "README.md")).read() \
         if False else open(os.path.join("README.md")).read()
-    assert "amber = connected without internet" not in md.lower()
+    assert "orange = connected without internet" not in md.lower()
 
 
 # ---------- 2. Light: three cases only ----------
@@ -277,12 +277,12 @@ def test_light_muted_is_red_in_every_mode():
         assert span.choose_led(base_state(mic_muted=True, mode=mode)) == "red", mode
 
 
-def test_light_working_is_amber_regardless_of_connectivity():
+def test_light_working_is_orange_regardless_of_connectivity():
     for mode in ("listening", "recording", "thinking", "tool", "speaking"):
         for wifi, net in ((True, True), (True, False), (False, False), (False, True)):
             got = span.choose_led(base_state(mic_muted=False, mode=mode,
                                              wifi=wifi, internet=net))
-            assert got == "amber", (mode, wifi, net)
+            assert got == "orange", (mode, wifi, net)
 
 
 def test_light_idle_is_green_regardless_of_connectivity():
@@ -293,18 +293,18 @@ def test_light_idle_is_green_regardless_of_connectivity():
 
 
 def test_light_color_values():
-    assert set(span.LED_COLORS) == {"red", "amber", "green", "off"}, \
+    assert set(span.LED_COLORS) == {"red", "orange", "green", "off"}, \
         "only three live colours plus off"
     assert span.LED_COLORS["red"] == (255, 0, 0)
-    assert span.LED_COLORS["amber"] == (255, 140, 0)
+    assert span.LED_COLORS["orange"] == (255, 140, 0)
     assert span.LED_COLORS["green"] == (34, 197, 94)
     assert span.LED_COLORS["off"] == (0, 0, 0)
 
 
 def test_update_led_syncs_hex():
     set_state(mode="thinking", mic_muted=False, internet=True)
-    assert span.STATE["led"]["name"] == "amber"
-    assert span.STATE["led"]["hex"] == "#%02x%02x%02x" % span.LED_COLORS["amber"]
+    assert span.STATE["led"]["name"] == "orange"
+    assert span.STATE["led"]["hex"] == "#%02x%02x%02x" % span.LED_COLORS["orange"]
 
 
 def test_tool_error_returns_thinking_via_api(client):
@@ -314,7 +314,7 @@ def test_tool_error_returns_thinking_via_api(client):
                                         "detail": "No internet connection"})
     assert r.status_code == 200
     assert span.STATE["mode"] == "thinking"
-    assert span.STATE["led"]["name"] == "amber"
+    assert span.STATE["led"]["name"] == "orange"
 
 
 def test_light_off_on_flow_via_api(client):
@@ -483,7 +483,7 @@ def test_post_event_wake_and_validation(client):
 
 
 def test_thinking_done_idle_light_flow_via_api(client):
-    # 1 API -> thinking, stays: check amber. done API -> listening: check amber.
+    # 1 API -> thinking, stays: check orange. done API -> listening: check orange.
     # 10s idle -> main unmuted: check green.
     set_state(mode="idle", wifi=True, internet=True,
               mic_muted=False, light_enabled=True)
@@ -492,18 +492,18 @@ def test_thinking_done_idle_light_flow_via_api(client):
     assert r.status_code == 200
     st = client.get("/api/state").get_json()
     assert st["mode"] == "thinking", st
-    assert st["led"]["name"] == "amber", st["led"]
-    assert st["led"]["hex"] == "#%02x%02x%02x" % span.LED_COLORS["amber"]
+    assert st["led"]["name"] == "orange", st["led"]
+    assert st["led"]["hex"] == "#%02x%02x%02x" % span.LED_COLORS["orange"]
     # stays in thinking without further events (no auto-leave before timeout)
     st2 = client.get("/api/state").get_json()
-    assert st2["mode"] == "thinking" and st2["led"]["name"] == "amber"
+    assert st2["mode"] == "thinking" and st2["led"]["name"] == "orange"
 
     r = client.post("/api/event", json={"type": "assistant_done", "id": "a-th"})
     assert r.status_code == 200
     st = client.get("/api/state").get_json()
     assert st["mode"] == "listening", st
-    assert st["led"]["name"] == "amber", st["led"]
-    assert st["led"]["hex"] == "#%02x%02x%02x" % span.LED_COLORS["amber"]
+    assert st["led"]["name"] == "orange", st["led"]
+    assert st["led"]["hex"] == "#%02x%02x%02x" % span.LED_COLORS["orange"]
 
     # 10s without events -> main screen
     with span.LOCK:

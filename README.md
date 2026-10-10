@@ -3,7 +3,7 @@
 A Flask app that serves three static files (HTML, CSS, vanilla JS). No Node, no build step, no
 frameworks, no external fonts or CDNs, so it works offline. Chromium on the Pi (or any phone/laptop on
 the same network) renders the 240x320 screen scaled to fit, inside a device frame.
-Clean light theme, 12px chat text, three light colours only (red / amber / green).
+Clean light theme, 12px chat text, three light colours only (red / orange / green).
 
 ## Run
 
@@ -22,8 +22,8 @@ Stop any old TFT script first so it doesn't compete for GPIO 5 or the WS2812 (`p
 Run as your desktop user, not with sudo, so `wpctl` reaches your PipeWire session.
 
 After every update on the Pi: `git pull`, restart `app.py`, close all Pi tabs and open one
-fresh tab — its title must read `SPAN v5`, or it runs stale files. Static files are versioned
-(`?v=5`) plus `no-cache`, so a fresh tab always loads the matching HTML/JS/CSS set — never
+fresh tab — its title must read `SPAN v6`, or it runs stale files. Static files are versioned
+(`?v=6`) plus `no-cache`, so a fresh tab always loads the matching HTML/JS/CSS set — never
 debug visuals on a stale copy. If mute presses do nothing, check `GET /api/log`: `mic_mute_toggle`
 (press seen), `Microphone mute not applied` (hardware ignored it), `mic_muted_poll` (2s hardware
 poll reverted the UI), or a `GPIO 5 switch init` error (button not initialised).
@@ -76,7 +76,7 @@ Light cases, exactly three (highest first):
 | Condition | Colour |
 |---|---|
 | Mic muted (any mode) | red |
-| Listening / recording / thinking / using a tool / responding | amber |
+| Listening / recording / thinking / using a tool / responding | orange |
 | Idle with mic on (unmuted) | green |
 | Explicit light-off event | off |
 
@@ -91,7 +91,7 @@ same process, `from app import publish; publish({...})`. The screen mode follows
 
 How the light works: curl never sets the light. Each event goes through `publish()`,
 which sets the mode (`_set_mode`), then `update_led()` calls the `choose_led()` function
-(`app.py`): light off? -> off; mic muted? -> red; mode not idle? -> amber; else green.
+(`app.py`): light off? -> off; mic muted? -> red; mode not idle? -> orange; else green.
 It writes the pixel (`board.D13`, only when the colour changes) and stores
 `STATE.led`. The `S=` check below only *reads* that result via `GET /api/state`;
 the browser LED bar reads the same field over SSE.
@@ -122,25 +122,25 @@ While recording, `user_partial` / `user_final` go to the recording card instead 
 Ids only need to be unique among bubbles still in progress, so reusing `u1`/`a1` every turn is fine.
 
 Check with `S='curl -s localhost:5000/api/state | python3 -c "import json,sys; s=json.load(sys.stdin); print(s[\"mode\"], s[\"led\"])"'`
-after each step. Every non-idle mode shares the one amber working colour.
+after each step. Every non-idle mode shares the one orange working colour.
 
 ## Check sequences (copy-paste)
 
-1. Thinking stays amber (one API), done -> listening amber, 10s -> main green:
+1. Thinking stays orange (one API), done -> listening orange, 10s -> main green:
 ```bash
 E='curl -s -XPOST -H Content-Type:application/json localhost:5000/api/event -d'
 S='curl -s localhost:5000/api/state | python3 -c "import json,sys; s=json.load(sys.stdin); print(s[\"mode\"], s[\"led\"])"'
-$E '{"type":"wake"}' && $S                                                          # listening amber, chat
-$E '{"type":"user_final","id":"u1","text":"What is the weather?"}' && $S            # thinking amber, stays
-$E '{"type":"tool","id":"t1","name":"get_weather","status":"start"}' && $S          # tool amber (same)
-$E '{"type":"tool","id":"t1","name":"get_weather","status":"ok","detail":"31C"}' && $S  # thinking amber
-$E '{"type":"assistant_done","id":"a1"}' && $S                                       # listening amber
+$E '{"type":"wake"}' && $S                                                          # listening orange, chat
+$E '{"type":"user_final","id":"u1","text":"What is the weather?"}' && $S            # thinking orange, stays
+$E '{"type":"tool","id":"t1","name":"get_weather","status":"start"}' && $S          # tool orange (same)
+$E '{"type":"tool","id":"t1","name":"get_weather","status":"ok","detail":"31C"}' && $S  # thinking orange
+$E '{"type":"assistant_done","id":"a1"}' && $S                                       # listening orange
 sleep 12 && $S                                                                      # idle green, main SPAN orb
 ```
 
 2. Recording (button only, online or offline), mute never exits it:
 ```bash
-$E '{"type":"recording","on":true}' && $S                                            # recording amber, recview
+$E '{"type":"recording","on":true}' && $S                                            # recording orange, recview
 $E '{"type":"user_final","id":"r1","text":"Agenda for today"}' && $S                # stays recording
 $E '{"type":"recording","on":false}' && $S                                          # idle green, REC archived
 ```
@@ -149,8 +149,8 @@ $E '{"type":"recording","on":false}' && $S                                      
 ```bash
 $E '{"type":"wake"}'
 $E '{"type":"user_final","id":"u2","text":"Latest news in USA?"}'
-$E '{"type":"tool","id":"t3","name":"web_search","status":"error","detail":"No internet connection"}' && $S  # thinking amber
-$E '{"type":"assistant_done","id":"a2"}' && $S                                       # listening amber
+$E '{"type":"tool","id":"t3","name":"web_search","status":"error","detail":"No internet connection"}' && $S  # thinking orange
+$E '{"type":"assistant_done","id":"a2"}' && $S                                       # listening orange
 sleep 12 && $S                                                                      # idle green
 ```
 
@@ -159,8 +159,8 @@ sleep 12 && $S                                                                  
 $E '{"type":"wake"}'
 $E '{"type":"user_final","id":"u3","text":"Tell me about the Pi 5"}'
 $E '{"type":"assistant_start","id":"a3"}'
-$E '{"type":"assistant_token","id":"a3","text":"It has "}' && $S                     # speaking amber
-$E '{"type":"assistant_interrupted","id":"a3"}' && $S                               # listening amber
+$E '{"type":"assistant_token","id":"a3","text":"It has "}' && $S                     # speaking orange
+$E '{"type":"assistant_interrupted","id":"a3"}' && $S                               # listening orange
 sleep 12 && $S                                                                      # idle green
 ```
 
@@ -168,7 +168,7 @@ sleep 12 && $S                                                                  
 ```bash
 $E '{"type":"light","on":false}' && $S                                               # led off
 $E '{"type":"light","on":true}' && $S                                                # restored colour
-$E '{"type":"user_final","id":"u9","text":"stuck?"}' && $S                           # thinking amber
+$E '{"type":"user_final","id":"u9","text":"stuck?"}' && $S                           # thinking orange
 sleep 12 && $S                                                                      # idle green, never stuck in chat
 ```
 
