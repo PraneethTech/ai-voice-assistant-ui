@@ -140,7 +140,6 @@ def set_mic_muted(mute):
     run_cmd(["wpctl", "set-mute", MIC, "1" if mute else "0"])
 
 
-def read_wifi():
 def _wifi_iface_up(operstate, carrier):
     """Kernel interface state counts as Wi-Fi up. operstate alone is unreliable
     for wireless (hotspot links often report dormant/unknown), so a live
@@ -153,6 +152,9 @@ def _wifi_iface_up(operstate, carrier):
 
 
 _last_wifi_result = None
+
+
+def read_wifi():
 
 
 def read_wifi():
