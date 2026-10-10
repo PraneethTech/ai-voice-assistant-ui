@@ -175,8 +175,10 @@ def test_js_ids_all_exist_in_html():
 
 
 def test_static_urls_versioned():
+    import re
     html = open(os.path.join(span.app.root_path, "templates", "index.html")).read()
-    assert "style.css" in html and "app.js" in html and "v='3'" in html, \
+    assert "style.css" in html and "app.js" in html
+    assert re.search(r"v='\d+'", html), \
         "versioned static URLs force fresh fetch after deploys"
 
 
