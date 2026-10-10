@@ -3,6 +3,7 @@
 A Flask app that serves three static files (HTML, CSS, vanilla JS). No Node, no build step, no
 frameworks, no external fonts or CDNs, so it works offline. Chromium on the Pi (or any phone/laptop on
 the same network) renders the 240x320 screen scaled to fit, inside a device frame.
+Clean light theme, 12px chat text, three light colours only (red / amber / green).
 
 ## Run
 
@@ -20,12 +21,12 @@ python app.py                # PORT=5055 python app.py to change the port
 Stop any old TFT script first so it doesn't compete for GPIO 5 or the WS2812 (`pgrep -af final.py`).
 Run as your desktop user, not with sudo, so `wpctl` reaches your PipeWire session.
 
-After every update on the Pi: `git pull`, restart `app.py`, refresh the browser once.
-Static files are versioned (`?v=3`) plus `no-cache`, so a refresh always loads the
-matching HTML/JS/CSS set — never debug visuals on a stale copy. If mute presses do
-nothing, check `GET /api/log`: `mic_mute_toggle` (press seen), `Microphone mute not
-applied` (hardware ignored it), `mic_muted_poll` (2s hardware poll reverted the UI),
-or a `GPIO 5 switch init` error (button not initialised).
+After every update on the Pi: `git pull`, restart `app.py`, close all Pi tabs and open one
+fresh tab — its title must read `SPAN v5`, or it runs stale files. Static files are versioned
+(`?v=5`) plus `no-cache`, so a fresh tab always loads the matching HTML/JS/CSS set — never
+debug visuals on a stale copy. If mute presses do nothing, check `GET /api/log`: `mic_mute_toggle`
+(press seen), `Microphone mute not applied` (hardware ignored it), `mic_muted_poll` (2s hardware
+poll reverted the UI), or a `GPIO 5 switch init` error (button not initialised).
 
 ## Screen
 
@@ -67,7 +68,8 @@ tail -n 200 logs/span.log
 ```
 
 Set `SPAN_LOG_FILE=/path/to/span.log` before starting the app to store it elsewhere. Log files are
-excluded from Git.
+excluded from Git. From any browser on the network: `GET /api/log?lines=100` tails the same log
+without SSH (mute toggles, mode changes, Wi-Fi probe detail, init errors).
 
 Light cases, exactly three (highest first):
 
@@ -120,7 +122,7 @@ While recording, `user_partial` / `user_final` go to the recording card instead 
 Ids only need to be unique among bubbles still in progress, so reusing `u1`/`a1` every turn is fine.
 
 Check with `S='curl -s localhost:5000/api/state | python3 -c "import json,sys; s=json.load(sys.stdin); print(s[\"mode\"], s[\"led\"])"'`
-after each step. Thinking and tool share one amber working colour.
+after each step. Every non-idle mode shares the one amber working colour.
 
 ## Check sequences (copy-paste)
 

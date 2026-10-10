@@ -212,6 +212,16 @@ def test_build_stamp_visible():
     assert "console.log('SPAN build v5')" in js
 
 
+def test_readme_matches_shipped_version():
+    # README's update instructions must name the static version actually shipped.
+    import re
+    html = open(os.path.join(span.app.root_path, "templates", "index.html")).read()
+    md = open(os.path.join("README.md")).read()
+    shipped = re.search(r"v='(\d+)'", html).group(1)
+    assert f"?v={shipped}" in md, "README must document the shipped static version"
+    assert "/api/log" in md, "README must document the remote log endpoint"
+
+
 def test_mute_switch_verifies_hardware(monkeypatch):
     calls = []
     monkeypatch.setattr(span, "set_mic_muted", lambda m: calls.append(m))
