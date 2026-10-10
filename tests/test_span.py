@@ -152,6 +152,19 @@ def test_stream_fallback_paints_state_without_sse():
     assert "setInterval" in js and "if (!connected)" in js, "poll-while-down fallback required"
 
 
+def test_app_js_parses():
+    # A syntax error here kills the entire script -> dead screen. Gate it.
+    import shutil
+    import subprocess
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node not available")
+    r = subprocess.run([node, "--check",
+                        os.path.join(span.app.root_path, "static", "app.js")],
+                       capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, r.stderr
+
+
 def test_span_wordmark_fixed_in_header_all_screens():
     html = open(os.path.join(span.app.root_path, "templates", "index.html")).read()
     assert 'class="brand-top"' in html and ">SPAN<" in html

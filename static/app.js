@@ -85,7 +85,7 @@ function render() {
 
   const loader = !connected ? 'Reconnecting…'
     : S.mic_muted ? 'Mic muted'
-    : mode === 'tool' ? `Using ${toolName || 'tool'}…` : LOADER[mode] || '');
+    : mode === 'tool' ? `Using ${toolName || 'tool'}…` : LOADER[mode] || '';
   $('loaderText').textContent = loader;
   const sub = $('emptySub');
   if (sub) sub.textContent = S.mic_muted ? 'Mic muted' : 'Ready';
