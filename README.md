@@ -8,7 +8,8 @@ the same network) renders the 240x320 screen scaled to fit, inside a device fram
 
 ```bash
 source /path/to/aivenv/bin/activate
-python -m pip install -r requirements.txt
+python -m pip install -r requirements.txt          # core (Flask) + tests, all machines
+python -m pip install -r requirements-pi.txt       # Pi 5 only: GPIO button + WS2812 (optional)
 python app.py                # PORT=5055 python app.py to change the port
 ```
 

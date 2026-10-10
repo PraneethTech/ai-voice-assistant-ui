@@ -12,6 +12,10 @@ PORT="${PORT:-5000}"
 if [ ! -d "$VENV" ]; then
   python3 -m venv --system-site-packages "$VENV"
   "$VENV/bin/pip" install -r requirements.txt
+  # Pi-only hardware (GPIO button, WS2812). Skipped on laptops.
+  if [ -f requirements-pi.txt ] && uname -m | grep -qE '^(aarch64|armv7l|armv6l)$'; then
+    "$VENV/bin/pip" install -r requirements-pi.txt
+  fi
 fi
 
 if [ "${1:-}" = "--kiosk" ]; then
